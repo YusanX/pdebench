@@ -1,0 +1,60 @@
+{
+  "id": "poisson_high_contrast",
+  "pde": {
+    "type": "poisson",
+    "description": "Poisson with high-contrast coefficients (jump from 1 to 1e6)",
+    "coefficients": {
+      "kappa": {
+        "type": "piecewise_x",
+        "left": 1.0,
+        "right": 1000000.0,
+        "x_split": 0.5
+      }
+    },
+    "manufactured_solution": {
+      "u": "sin(pi*x)*sin(pi*y)"
+    }
+  },
+  "domain": {
+    "type": "unit_square"
+  },
+  "mesh": {
+    "resolution": 100,
+    "cell_type": "triangle"
+  },
+  "fem": {
+    "family": "Lagrange",
+    "degree": 1
+  },
+  "bc": {
+    "dirichlet": {
+      "on": "all",
+      "value": "u"
+    }
+  },
+  "targets": {
+    "target_error": 0.05,
+    "metric": "rel_L2_grid"
+  },
+  "expose_parameters": [
+    "mesh.resolution",
+    "fem.degree",
+    "ksp.type",
+    "ksp.rtol",
+    "pc.type"
+  ],
+  "output": {
+    "format": "npz",
+    "grid": {
+      "bbox": [
+        0,
+        1,
+        0,
+        1
+      ],
+      "nx": 50,
+      "ny": 50
+    },
+    "save_xdmf": false
+  }
+}

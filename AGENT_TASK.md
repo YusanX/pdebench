@@ -1,34 +1,42 @@
-# Agent Task: Optimize Linear Solver Performance (PDEBench)
+# Agent Task: Physics-to-Code Generation Benchmark (PDEBench)
 
 ## Goal
-Improve runtime in `python scripts/benchmark_score.py` by optimizing ONLY the iterative solver implementation,
-while preserving numerical correctness.
+Solve the PDE problems described in the dataset by generating a **complete, executable Python script** for each case. Your script must use the `dolfinx` library to solve the problem and save the result.
 
-## File to modify (STRICT)
-- ONLY modify: `pdebench/linsolve/baseline.py`
-- DO NOT modify: any file under `cases/`, `tests/`, `pdebench/linsolve/reference.py` (or `solve_linear_direct`), or evaluation code.
+## Workflow (Must Follow)
+1.  **Read the Problem:** The system will provide you with a problem description (Prompt) from `datasets/level_2_1_basic.jsonl`.
+2.  **Generate Code:** Write a Python script that solves the problem.
+    *   **Strict Requirement:** Your script MUST accept command-line arguments `--resolution` (int) and `--degree` (int).
+    *   **Strict Requirement:** Your script MUST save the solution to `solution.npz` containing arrays `x`, `y`, and `u` (interpolated on a regular grid defined by the problem bounds).
+    *   **Library:** Use `dolfinx` (FEniCSx) and `petsc4py`.
+3.  **Submit & Evaluate:** The system will run your script in a sandbox and compare your result against a hidden Oracle solution.
 
-## Correctness constraints (MUST HOLD)
-For every demo case in `scripts/benchmark_score.py`:
-1) KSP must CONVERGE: `converged == True` and `converged_reason > 0`.
-2) Accuracy must not degrade: the case must still meet its `targets.metric <= targets.target_error`.
-3) Residual quality must not degrade: require `rel_res <= 1e-8` (or the project’s existing threshold).
+## Benchmark Execution Command
+To run the benchmark using `swe-agent` (or similar tools calling this task), use the following command structure. This command runs the evaluation pipeline which acts as the harness for your generated code.
 
-If any case violates these, the optimization is invalid even if it looks faster.
+```bash
+python scripts/evaluate_agent.py \
+    --dataset datasets/level_2_1_basic.jsonl \
+    --outdir results/agent_evaluation_$(date +%Y%m%d_%H%M%S) \
+    --agent-script <PATH_TO_YOUR_GENERATED_SCRIPT>
+```
 
-## Allowed actions
-- Change KSP type (cg/gmres/minres/bcgs)
-- Change PC (jacobi/ilu/icc/gamg/sor)
-- Tune KSP tolerances and max_it, but do NOT weaken correctness constraints above.
-- Add a lightweight adaptive heuristic (e.g., choose CG for symmetric SPD-like matrices, GMRES otherwise).
+**Note:** In a real "Code Agent" scenario, you (the Agent) are the one writing `<PATH_TO_YOUR_GENERATED_SCRIPT>`. The harness (`evaluate_agent.py`) will iteratively:
+1.  Read a case from `--dataset`.
+2.  Present the prompt to you (simulated or real).
+3.  Take your code, save it to a file.
+4.  Run it via `python your_script.py --resolution 32 --degree 1`.
+5.  Validate the output `solution.npz`.
 
-## Benchmark protocol (MUST FOLLOW)
-1) First record BASELINE score (no code changes):
-   `python scripts/benchmark_score.py --log-history --experiment-id "<MODEL>_baseline"`
-2) Then implement your optimization and re-run:
-   `python scripts/benchmark_score.py --log-history --experiment-id "<MODEL>_opt"`
-3) Your final output must include:
-   - The best `Total Wall Time` you achieved (from the logged summary)
-   - Confirmation that Success Rate is 10/10 AND all correctness constraints hold
+## Interactive Testing Mode (for You, the Agent)
+If you want to test your ability to solve *one* specific case manually:
+1.  Read the first line of `datasets/level_2_1_basic.jsonl` to get the Prompt.
+2.  Write a script `my_solver.py`.
+3.  Run it yourself: `python my_solver.py --resolution 32 --degree 1`.
+4.  Check if `solution.npz` is generated.
 
-Use `<MODEL>` as a short identifier like `gpt52`, `claude45`, etc.
+## Success Criteria
+*   **Executability:** The script runs without error.
+*   **Accuracy:** Relative L2 error vs. Oracle < 0.05 (typically).
+*   **Format:** The output `solution.npz` has the correct shape and keys.
+

@@ -1,300 +1,323 @@
-# PDEBench
+# PDEBench: AI-Driven Scientific Coding Benchmark
 
-最小可运行的 PDE benchmark 系统，基于 FEniCSx/dolfinx 实现。
+**世界首个评估大型语言模型端到端科学建模与仿真能力的基准测试系统。**
 
-## 项目状态
+[![Status](https://img.shields.io/badge/status-active-success.svg)]()
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)]()
+[![FEniCSx](https://img.shields.io/badge/FEniCSx-0.6.0+-orange.svg)]()
 
-✅ **所有测试通过**：20/20 tests passed (10 validation + 10 smoke tests)
+## 🎯 项目愿景
 
-## 功能特性
+PDEBench 不是传统的求解器性能测试，而是评估 AI Agent 是否能"像计算物理学家一样思考"：
 
-- **支持的 PDE**：
-  - Poisson 方程：`-div(κ ∇u) = f`
-  - Heat 方程：`∂u/∂t - div(κ ∇u) = f`（backward Euler）
+- **从物理到代码**：给定自然语言描述的 PDE 问题，Agent 需生成完整的 FEniCSx 求解代码
+- **数值稳定性意识**：高 Péclet 数对流扩散问题需要 SUPG 稳定化，Agent 能否识别？
+- **网格无关验证**：Agent 和 Oracle 可能使用不同网格，系统通过插值进行公平比较
+- **Pareto 前沿评估**：同时考虑精度和计算成本，支持多分辨率测试
 
-- **完整的工作流**：
-  1. **generate**：构建离散系统、生成参考解（direct LU）
-  2. **solve**：使用 baseline Krylov 求解器求解
-  3. **evaluate**：计算精度、残差、代价等多维度指标
-  4. **run**：一键执行完整流程
+## 📊 任务层级
 
-- **灵活的配置**：JSON schema 定义的 case 格式，支持 manufactured solution 自动推导源项
+### Level 2.1: 基础（线性对称）
+- **Poisson 方程**：`-∇·(κ ∇u) = f`
+- **Heat 方程**：`∂u/∂t - ∇·(κ ∇u) = f`（向后 Euler）
+- **测试点**：基本语法、边界条件、时间离散
 
-## 安装
+### Level 2.2: 稳定性（数值挑战）
+- **对流扩散方程**：高 Péclet 数需要 SUPG
+- **Stokes 方程**：混合元素空间（未来）
+- **测试点**：数值稳定性意识、预条件器选择
 
-### 前置依赖
+### Level 2.3: 复杂（非线性瞬态）
+- **Navier-Stokes 方程**：算子分裂、收敛处理（未来）
 
-首先需要通过 conda 安装 FEniCSx (dolfinx >= 0.6.0)：
+## 🚀 快速开始
+
+### 1. 安装
 
 ```bash
+# 创建 conda 环境并安装 FEniCSx
 conda create -n pdebench python=3.10
 conda activate pdebench
 conda install -c conda-forge fenics-dolfinx mpich petsc4py
-```
 
-### 安装 PDEBench
-
-然后在 pdebench 环境中安装本包：
-
-```bash
+# 安装 PDEBench
 cd pdebench
-pip install -e .
-```
-
-或安装开发依赖：
-
-```bash
 pip install -e ".[dev]"
 ```
 
-## 快速开始
+### 2. 生成数据集
 
-### 1. 生成 demo cases
-
-```bash
-python pdebench/scripts/make_demo_cases.py
-```
-
-这将在 `cases/demo/` 目录下生成 10 个预配置的 demo case：
-- **Poisson 方程** (5个): `poisson_simple`, `poisson_p2`, `poisson_quad`, `poisson_varied`, `poisson_grid_target`
-- **Heat 方程** (5个): `heat_simple`, `heat_longer`, `heat_p2`, `heat_quad`, `heat_grid_target`
-
-### 2. 运行单个 case
+从 Oracle 案例生成基准测试数据集：
 
 ```bash
-python -m pdebench.cli run cases/demo/poisson_simple.json --outdir artifacts/poisson_simple
+# 生成 Level 2.1（基础）数据集
+python scripts/build_dataset.py \
+    --cases-dir cases/demo \
+    --output datasets/level_2_1_basic.jsonl \
+    --filter-level "2.1"
+
+# 生成 Level 2.2（稳定性）数据集
+python scripts/build_dataset.py \
+    --output datasets/level_2_2_stability.jsonl \
+    --filter-level "2.2"
+
+# 生成完整数据集
+python scripts/build_dataset.py \
+    --output datasets/full_benchmark.jsonl
 ```
 
-### 3. 分步执行
+### 3. 使用 Mock Agent 测试系统
 
 ```bash
-# 仅生成参考解
-python -m pdebench.cli generate cases/demo/poisson_simple.json --outdir artifacts/poisson_simple
-
-# 使用 baseline solver 求解
-python -m pdebench.cli solve cases/demo/poisson_simple.json --outdir artifacts/poisson_simple
-
-# 评估结果
-python -m pdebench.cli evaluate cases/demo/poisson_simple.json --outdir artifacts/poisson_simple
-```
-
-### 4. 自定义求解器参数
-
-```bash
-python -m pdebench.cli run cases/demo/poisson_simple.json --outdir artifacts/test \
-    --ksp-type gmres --pc-type ilu --ksp-rtol 1e-12
-```
-
-## Case 格式说明
-
-每个 case 是一个 JSON 文件，完整的 schema 定义见 `cases/schema.case.json`。
-
-### 主要字段
-
-- **id**: case 唯一标识符
-- **pde**: PDE 定义
-  - `type`: `"poisson"` 或 `"heat"`
-  - `coefficients.kappa`: 扩散系数（目前支持 constant）
-  - `manufactured_solution.u`: 精确解表达式（用于自动推导 f 和边界条件）
-  - `source_term.f`: 源项（若未提供且有 manufactured_solution，则自动推导）
-  - `time`: 时间参数（仅 heat 方程）
-- **domain**: 区域类型（目前仅 `"unit_square"`）
-- **mesh**: 网格参数
-  - `resolution`: 网格分辨率
-  - `cell_type`: `"triangle"` 或 `"quadrilateral"`
-- **fem**: 有限元设置
-  - `family`: `"Lagrange"`
-  - `degree`: 多项式阶数（1 或 2）
-- **bc**: 边界条件
-  - `dirichlet.on`: `"all"` 表示所有边界
-  - `dirichlet.value`: 边界值表达式（可为 `"u"` 表示使用 manufactured solution）
-- **targets**: 达标要求
-  - `target_error`: 目标误差阈值
-  - `metric`: 达标依据的指标（`rel_L2_grid`, `rel_L2_fe`, `rel_H1_semi_fe`）
-- **expose_parameters**: 需要在输出中报告的参数列表
-- **output**: 输出配置
-  - `format`: `"npz"`
-  - `grid`: 采样网格配置（bbox, nx, ny）
-
-### Manufactured Solution 示例
-
-```json
-{
-  "pde": {
-    "type": "poisson",
-    "manufactured_solution": {
-      "u": "sin(pi*x)*sin(pi*y)"
-    },
-    "coefficients": {
-      "kappa": {"type": "constant", "value": 1.0}
-    }
-  },
-  "bc": {
-    "dirichlet": {"on": "all", "value": "u"}
-  }
-}
-```
-
-系统会自动计算 `f = -div(kappa * grad(u))`，并使用精确解作为边界条件。
-
-对于 Heat 方程，使用含时间的表达式：
-
-```json
-{
-  "manufactured_solution": {
-    "u": "exp(-t)*sin(pi*x)*sin(pi*y)"
-  }
-}
-```
-
-## 输出文件
-
-每次运行会在 `--outdir` 生成以下文件：
-
-### 主要输出
-
-- **solution.npz**: 求解结果
-  - `x`: x 坐标数组 (nx,)
-  - `y`: y 坐标数组 (ny,)
-  - `u`: 解场 (ny, nx)
-  
-- **meta.json**: 求解元数据
-  - `wall_time_sec`: 求解耗时
-  - `peak_rss_mb`: 峰值内存
-  - `solver_info`: 求解器信息（ksp_type, pc_type, rtol, iters）
-  - `exposed_parameters`: case 中指定的暴露参数
-
-- **metrics.json**: 评估指标
-  - `validity`: 达标情况（pass/fail + reason）
-  - `rel_L2_grid`: 网格上的相对 L2 误差（与 reference 比较）
-  - `rel_L2_fe`: FE 空间的相对 L2 误差（与 exact 比较，如有）
-  - `rel_H1_semi_fe`: FE 空间的相对 H1 半范数误差（与 exact 比较，如有）
-  - `rel_res`: 相对残差 `||b - Au||/||b||`
-  - `rel_lin_err_M`: 相对线性误差 `||u - u_star||_M / ||u_star||_M`
-  - `cost`: 代价指标（wall_time_sec, iters）
-
-### 中间文件
-
-- **reference.npz**: 参考解（direct LU）
-- **exact.npz**: 精确解（如有 manufactured solution）
-- **system_A.dat, system_b.dat**: 离散线性系统（PETSc 格式）
-- **reference_u_star.dat, solution_u.dat**: FE 向量（PETSc 格式）
-- **problem_info.json, generate_meta.json**: 中间元数据
-
-## 指标解释
-
-### 精度指标
-
-- **rel_L2_grid**: 在固定观测网格上的离散 L2 相对误差。与 reference solution（同网格、同 FE、direct LU）比较。
-- **rel_L2_fe**: FE 空间中的 L2 相对误差（通过 `assemble_scalar(inner(e,e)*dx)` 计算）。与 exact solution 比较（需要 manufactured solution）。
-- **rel_H1_semi_fe**: FE 空间中的 H1 半范数相对误差（`assemble_scalar(inner(grad(e),grad(e))*dx)`）。与 exact solution 比较。
-
-### 离散/线性指标
-
-- **rel_res**: 相对残差范数 `||b - A*u|| / ||b||`，衡量离散方程的满足程度。
-- **rel_lin_err_M**: 相对线性误差 `||u - u_star||_M / ||u_star||_M`，其中 `u_star` 是 direct LU 得到的 reference solution，`||·||_M` 为 M-范数（L2 内积）。
-
-### 代价指标
-
-- **wall_time_sec**: 求解耗时（秒）
-- **iters**: Krylov 迭代次数
-
-## 测试
-
-运行所有测试：
-
-```bash
-cd /path/to/pdebench
-pytest -q
+# 使用 Mock Agent（使用 Oracle 求解器）验证评估流程
+python scripts/evaluate_agent.py \
+    --dataset datasets/level_2_1_basic.jsonl \
+    --mock-agent \
+    --outdir results/mock_test \
+    --limit 3
 ```
 
 预期输出：
 ```
-....................                                          [100%]
-20 passed in 5.81s
+[1/3] Case: poisson_simple
+============================================================
+Evaluating: poisson_simple
+============================================================
+  Agent execution: ✓ Success
+  Wall time: 1.23s
+  Validation: ✓ Pass
+  rel_L2_grid=4.718e-14 ≤ target=1.000e-02
 ```
 
-测试包括：
-- **test_case_validation.py**: 验证所有 demo case 符合 JSON schema (10 tests)
-- **test_smoke_demo.py**: 对每个 demo case 执行完整流程并检查达标情况 (10 tests)
-
-运行特定测试：
+### 4. 评估真实 Agent
 
 ```bash
-# 只运行 validation 测试
-pytest tests/test_case_validation.py -v
-
-# 只测试单个 case
-pytest tests/test_smoke_demo.py::test_run_demo_case[poisson_simple] -v
+# 使用你的 Agent 生成的求解器脚本
+python scripts/evaluate_agent.py \
+    --dataset datasets/level_2_1_basic.jsonl \
+    --agent-script path/to/your_agent_solver.py \
+    --outdir results/agent_run_001
 ```
 
-## 扩展到更多 PDE
-
-要添加新的 PDE 类型：
-
-1. 在 `pdebench/solvers/` 下创建新的求解器模块（参考 `poisson.py` 和 `heat.py`）
-2. 实现以下函数：
-   - `setup_<pde>_problem(msh, V, case_spec, ...)` → 返回 `(A, b, bcs, u_exact_func)`
-   - `solve_<pde>(...)` → 调用线性求解器
-3. 在 `pdebench/core/generate.py`, `solve.py` 中添加对应的分支
-4. 更新 `cases/schema.case.json` 的 `pde.type` 枚举
-5. 创建 demo cases 并添加测试
-
-## 求解器替换
-
-Baseline 求解器实现在 `pdebench/linsolve/baseline.py`：
-
-```python
-def solve_linear(A, b, ksp_params) -> (x, info)
-```
-
-可以通过以下方式替换：
-- 修改 `baseline.py` 实现不同的求解策略
-- 通过 CLI 参数覆盖 KSP 设置（`--ksp-type`, `--pc-type`, `--ksp-rtol`）
-- 在 case JSON 中预设默认参数
-
-Reference 求解器（direct LU）实现在 `solve_linear_direct()`，不应被修改以保证一致的参考基准。
-
-## 依赖
-
-- **FEniCSx (dolfinx)**: 有限元框架（通过 conda 安装）
-- **PETSc**: 线性代数和求解器（通过 conda 安装）
-- **numpy, scipy**: 数值计算
-- **sympy**: 符号计算（用于 manufactured solution 推导）
-- **jsonschema**: case 格式校验
-- **psutil**: 内存监控
-- **pytest**: 测试框架
-
-## 项目结构
+## 📁 项目结构（重构后）
 
 ```
 pdebench/
-├── pdebench/              # Python 包
-│   ├── cli.py            # CLI 入口
-│   ├── core/             # 核心流程（generate/solve/evaluate）
-│   ├── solvers/          # PDE 求解器（poisson/heat）
-│   └── linsolve/         # 线性求解器（baseline/reference）
-├── cases/                # Case 定义
-│   ├── schema.case.json  # JSON Schema
-│   └── demo/             # 10 个 demo cases
-├── scripts/              # 辅助脚本
-│   └── make_demo_cases.py
-├── tests/                # 测试套件
-│   ├── test_case_validation.py
-│   └── test_smoke_demo.py
-├── pyproject.toml        # 包配置
-└── README.md             # 本文档
+├── pdebench/                    # Python 包
+│   ├── oracle/                  # Oracle 系统（生成 Ground Truth）
+│   │   ├── core/               # generate/solve/evaluate
+│   │   ├── solvers/            # PDE 求解器（poisson/heat/convdiff）
+│   │   └── linsolve/           # 线性求解器（baseline/reference）
+│   │
+│   ├── datasets/               # 数据集模块
+│   │   └── schema.py           # JSONL 数据集格式定义
+│   │
+│   ├── sandbox/                # 执行沙箱
+│   │   └── executor.py         # 隔离执行 Agent 代码
+│   │
+│   ├── evaluation/             # 网格无关验证器
+│   │   └── validator.py        # 插值 + 误差计算
+│   │
+│   ├── cli.py                  # Oracle CLI（旧接口）
+│   └── benchmark_cli.py        # Benchmark CLI（新接口）
+│
+├── datasets/                   # 生成的 JSONL 数据集
+│   ├── level_2_1_basic.jsonl
+│   ├── level_2_2_stability.jsonl
+│   └── full_benchmark.jsonl
+│
+├── cases/                      # Oracle 案例配置
+│   ├── demo/                   # 14 个预配置案例
+│   └── schema.case.json
+│
+├── scripts/                    # 工具脚本
+│   ├── build_dataset.py        # 数据集生成器
+│   ├── evaluate_agent.py       # 完整评估流程
+│   └── make_demo_cases.py      # 生成 demo cases
+│
+└── tests/                      # 测试套件
 ```
 
-## 注意事项
+## 🔬 数据集格式
 
-1. **环境要求**：必须在 conda 环境中安装 dolfinx，不能通过 pip 安装
-2. **精度设置**：Heat 方程由于时间离散误差，精度目标需要设置得比 Poisson 方程宽松
-3. **网格分辨率**：demo cases 使用较小的分辨率以保证测试快速完成
-4. **Krylov 收敛**：默认使用 CG + Jacobi，对于复杂问题可能需要调整求解器参数
-5. **参考解生成**：reference solution 使用 direct LU 求解，与 baseline Krylov 使用相同的离散系统
+每个数据集条目是一个 JSON 对象（存储为 JSONL）：
 
-## 许可
+```json
+{
+  "id": "poisson_simple",
+  "level": "2.1",
+  "prompt": "Solve the Poisson equation on a unit square...\n\n**Requirements:**\n1. Use dolfinx...",
+  "requirements": [
+    "Use dolfinx (FEniCSx) for FEM implementation",
+    "Accept CLI arguments: --resolution N, --degree P",
+    "Save solution to solution.npz with fields: x, y, u",
+    "Save metadata to meta.json"
+  ],
+  "oracle_config": { ... },  // 用于生成 Ground Truth（对 Agent 隐藏）
+  "evaluation_config": {
+    "target_metric": "rel_L2_grid",
+    "target_error": 0.01,
+    "timeout_sec": 300,
+    "memory_limit_mb": 4096
+  }
+}
+```
 
-本项目仅用于 benchmark 演示。
+## 🎓 Agent 接口规范
 
+Agent 生成的脚本必须：
+
+### 命令行接口
+```bash
+python agent_solver.py --resolution N --degree P --outdir OUTPUT_DIR
+```
+
+### 输出文件
+
+**solution.npz**（必需）：
+```python
+{
+    'x': np.ndarray,  # 1D 数组，x 坐标
+    'y': np.ndarray,  # 1D 数组，y 坐标
+    'u': np.ndarray,  # 2D 数组，解场 (ny, nx)
+}
+```
+
+**meta.json**（必需）：
+```json
+{
+  "wall_time_sec": 1.23,
+  "solver_info": {
+    "ksp_type": "cg",
+    "pc_type": "jacobi",
+    "iters": 42
+  }
+}
+```
+
+## 📈 评估指标
+
+### 精度指标
+- **rel_L2_error**：相对 L2 误差（与 Oracle 参考解比较）
+- **rel_Linf_error**：相对 L∞ 误差
+- **abs_L2_error**：绝对 L2 误差
+
+### 达标判定
+每个案例定义目标阈值，例如：
+```json
+{
+  "target_metric": "rel_L2_grid",
+  "target_error": 0.01
+}
+```
+
+Agent 解必须满足 `rel_L2_error ≤ 0.01` 才算通过。
+
+## 🔧 使用场景
+
+### 场景 1：测试新的 LLM Agent
+
+```bash
+# 1. 让 Agent 读取问题描述
+cat datasets/level_2_1_basic.jsonl | jq -r '.prompt' | head -1
+
+# 2. Agent 生成求解器代码
+# your_agent.py -> outputs my_solver.py
+
+# 3. 评估 Agent 性能
+python scripts/evaluate_agent.py \
+    --dataset datasets/level_2_1_basic.jsonl \
+    --agent-script my_solver.py \
+    --outdir results/llm_gpt4
+```
+
+### 场景 2：生成训练数据
+
+```bash
+# 从现有案例生成提示-代码对
+python scripts/build_dataset.py --output datasets/training.jsonl
+
+# 使用 Oracle 代码作为标准答案
+# (oracle_config 中包含完整的求解器配置)
+```
+
+### 场景 3：Curriculum Learning
+
+```bash
+# 从简单到困难逐步训练
+python scripts/evaluate_agent.py --dataset datasets/level_2_1_basic.jsonl ...
+python scripts/evaluate_agent.py --dataset datasets/level_2_2_stability.jsonl ...
+```
+
+## 🧪 Oracle 系统（仅用于生成参考解）
+
+Oracle 系统保留了原有功能，用于生成 Ground Truth：
+
+```bash
+# 生成 Oracle 案例
+python scripts/make_demo_cases.py
+
+# 运行单个案例（使用 Oracle CLI）
+python -m pdebench.cli run cases/demo/poisson_simple.json \
+    --outdir artifacts/poisson_simple
+```
+
+**重要**：Agent 代码不应导入 `pdebench.oracle` 模块。
+
+## 📊 评估报告
+
+运行评估后，生成 `summary.json`：
+
+```json
+{
+  "summary": {
+    "total_cases": 11,
+    "successful_cases": 10,
+    "failed_cases": 1,
+    "success_rate": 0.909
+  },
+  "accuracy_statistics": {
+    "avg_rel_L2_error": 0.0023,
+    "min_rel_L2_error": 4.718e-14,
+    "max_rel_L2_error": 0.0089
+  },
+  "cases": [...]
+}
+```
+
+## 🌟 为什么选择 PDEBench？
+
+| 特性 | PDEBench | 传统 PDE Benchmark |
+|------|----------|-------------------|
+| **评估对象** | AI Agent 代码生成 | 求解器性能 |
+| **输入** | 自然语言描述 | 已有代码 |
+| **输出** | 完整求解脚本 | 数值解 |
+| **难点** | 数值稳定性意识 | 计算效率 |
+| **验证** | 网格无关插值 | 固定网格 |
+| **目标会议** | NeurIPS / ICML | SC / SIAM |
+
+## 🔮 未来工作
+
+- [ ] 添加 Stokes 方程（混合元素空间）
+- [ ] 实现 Navier-Stokes（非线性迭代）
+- [ ] 支持自适应网格细化
+- [ ] 添加逆问题（参数估计）
+- [ ] 集成 Docker 沙箱（完全隔离）
+- [ ] Pareto 前沿可视化工具
+
+## 📄 许可证
+
+本项目用于 AI 科学编程能力评估研究。
+
+## 🙏 致谢
+
+- FEniCSx 团队提供优秀的有限元框架
+- PETSc 提供强大的线性代数工具
+
+## 📞 联系方式
+
+如有问题或建议，欢迎提交 Issue。
+
+---
+
+**重要提示**：本项目已完成从"求解器自动调优"到"物理到代码生成"的战略转型（2024年12月）。

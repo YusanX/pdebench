@@ -4,9 +4,9 @@ import json
 import sys
 from pathlib import Path
 
-from .core.generate import generate
-from .core.solve import solve_case
-from .core.evaluate import evaluate
+from .oracle.core.generate import generate
+from .oracle.core.solve import solve_case
+from .oracle.core.evaluate import evaluate
 
 
 def load_case(case_file):
