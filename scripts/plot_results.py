@@ -42,59 +42,93 @@ def load_experiment_history(log_file):
 def plot_pareto_front(experiments, output_dir, fmt='png'):
     """
     绘制 Time-Accuracy Trade-off 帕累托前沿图
+    不同模型用不同颜色标记
     """
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(10, 7))
     
-    times = []
-    errors = []
-    labels = []
-    colors_list = []
+    # 按模型家族分组并收集数据
+    model_data = {
+        'Baseline': {'times': [], 'errors': [], 'labels': [], 'color': '#1f77b4', 'marker': 'o'},
+        'GPT-5.2': {'times': [], 'errors': [], 'labels': [], 'color': '#2ca02c', 'marker': 's'},
+        'Gemini-2.5-Pro': {'times': [], 'errors': [], 'labels': [], 'color': '#ff7f0e', 'marker': '^'}
+    }
     
-    # 使用颜色映射表示时间顺序
-    cmap = plt.cm.viridis
-    n_exp = len(experiments)
-    
-    for idx, exp in enumerate(experiments):
+    for exp in experiments:
         summary = exp['summary']
+        exp_id = exp['experiment_id']
         
-        # 只绘制通过的实验
-        if summary['pass_rate'] == 1.0:
-            times.append(summary['total_wall_time'])
-            errors.append(summary['avg_rel_error'])
-            labels.append(exp['experiment_id'])
-            colors_list.append(cmap(idx / max(n_exp - 1, 1)))
+        # 确定模型家族
+        if 'gpt' in exp_id.lower():
+            family = 'GPT-5.2'
+        elif 'gemini' in exp_id.lower() or 'superassistant' in exp_id.lower():
+            family = 'Gemini-2.5-Pro'
+        elif 'baseline' == exp_id:
+            family = 'Baseline'
+        else:
+            continue
+        
+        model_data[family]['times'].append(summary['total_wall_time'])
+        model_data[family]['errors'].append(summary['avg_rel_error'])
+        model_data[family]['labels'].append(exp_id)
     
-    if not times:
-        print("⚠️  没有成功的实验记录，无法绘制帕累托图")
+    # 绘制每个模型家族
+    all_times = []
+    all_errors = []
+    
+    for family, data in model_data.items():
+        if not data['times']:
+            continue
+        
+        # 绘制散点
+        ax.scatter(data['times'], data['errors'], 
+                  c=data['color'], marker=data['marker'], s=150, 
+                  alpha=0.7, edgecolors='black', linewidth=1.5,
+                  label=family, zorder=3)
+        
+        all_times.extend(data['times'])
+        all_errors.extend(data['errors'])
+        
+        # 标注该家族的最优点（最快的）
+        if len(data['times']) > 0:
+            best_idx = np.argmin(data['times'])
+            best_time = data['times'][best_idx]
+            best_error = data['errors'][best_idx]
+            
+            # 简化标签名称
+            label_text = family
+            if family == 'Baseline':
+                label_text = 'Baseline'
+            elif family == 'GPT-5.2':
+                label_text = 'GPT-5.2\n(100% pass)'
+            elif family == 'Gemini-2.5-Pro':
+                label_text = f'Gemini-2.5-Pro\n({best_time:.2f}s, 90% pass)'
+            
+            # 调整标注位置避免重叠
+            xytext_offset = (15, 10) if family != 'Gemini-2.5-Pro' else (15, -20)
+            
+            ax.annotate(label_text, (best_time, best_error), 
+                       xytext=xytext_offset, textcoords='offset points',
+                       fontsize=9, fontweight='bold',
+                       bbox=dict(boxstyle='round,pad=0.4', 
+                                facecolor=data['color'], alpha=0.3, 
+                                edgecolor=data['color'], linewidth=2),
+                       arrowprops=dict(arrowstyle='->', 
+                                      connectionstyle='arc3,rad=0.3',
+                                      color=data['color'], lw=1.5))
+    
+    if not all_times:
+        print("⚠️  没有有效的实验记录，无法绘制帕累托图")
         return
-    
-    # 绘制散点，颜色表示时间顺序
-    scatter = ax.scatter(times, errors, c=range(len(times)), cmap='viridis', 
-                         s=100, alpha=0.7, edgecolors='black', linewidth=1.5,
-                         zorder=3)
-    
-    # 标注第一个和最后一个点
-    if len(times) > 0:
-        ax.annotate('Baseline', (times[0], errors[0]), 
-                   xytext=(10, 10), textcoords='offset points',
-                   fontsize=9, color='red', fontweight='bold',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
-    
-    if len(times) > 1:
-        ax.annotate('Latest', (times[-1], errors[-1]), 
-                   xytext=(10, -15), textcoords='offset points',
-                   fontsize=9, color='blue', fontweight='bold',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='lightblue', alpha=0.7))
     
     # 找到帕累托前沿
     pareto_indices = []
-    for i in range(len(times)):
+    for i in range(len(all_times)):
         is_pareto = True
-        for j in range(len(times)):
+        for j in range(len(all_times)):
             if i != j:
                 # 如果存在另一个点既更快又更准，当前点就不在帕累托前沿上
-                if times[j] <= times[i] and errors[j] <= errors[i]:
-                    if times[j] < times[i] or errors[j] < errors[i]:
+                if all_times[j] <= all_times[i] and all_errors[j] <= all_errors[i]:
+                    if all_times[j] < all_times[i] or all_errors[j] < all_errors[i]:
                         is_pareto = False
                         break
         if is_pareto:
@@ -102,14 +136,14 @@ def plot_pareto_front(experiments, output_dir, fmt='png'):
     
     # 绘制帕累托前沿连线
     if len(pareto_indices) > 1:
-        pareto_times = [times[i] for i in sorted(pareto_indices, key=lambda x: times[x])]
-        pareto_errors = [errors[i] for i in sorted(pareto_indices, key=lambda x: times[x])]
+        pareto_times = [all_times[i] for i in sorted(pareto_indices, key=lambda x: all_times[x])]
+        pareto_errors = [all_errors[i] for i in sorted(pareto_indices, key=lambda x: all_times[x])]
         ax.plot(pareto_times, pareto_errors, 'r--', alpha=0.5, linewidth=2, 
                label='Pareto Front', zorder=2)
     
-    ax.set_xlabel('Total Wall Time (seconds)', fontweight='bold')
-    ax.set_ylabel('Average Relative Error (L2)', fontweight='bold')
-    ax.set_title('Time-Accuracy Trade-off (Pareto Front)', fontweight='bold', pad=15)
+    ax.set_xlabel('Total Wall Time (seconds)', fontweight='bold', fontsize=12)
+    ax.set_ylabel('Average Relative Error (L2)', fontweight='bold', fontsize=12)
+    ax.set_title('Time-Accuracy Trade-off: LLM Agent Comparison', fontweight='bold', pad=15, fontsize=14)
     
     # 使用 log scale 以便更好地显示
     ax.set_xscale('log')
@@ -118,11 +152,8 @@ def plot_pareto_front(experiments, output_dir, fmt='png'):
     # 添加网格
     ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     
-    # 添加颜色条表示实验顺序
-    cbar = plt.colorbar(scatter, ax=ax, label='Experiment Index (Chronological)')
-    
     # 添加图例
-    ax.legend(loc='best', framealpha=0.9)
+    ax.legend(loc='best', framealpha=0.9, fontsize=11)
     
     plt.tight_layout()
     
@@ -200,49 +231,102 @@ def plot_optimization_trajectory(experiments, output_dir, fmt='png'):
 
 def plot_per_case_comparison(experiments, output_dir, fmt='png'):
     """
-    绘制每个 case 在不同实验中的性能对比（仅对比首次和最新）
+    绘制每个 case 在不同实验中的性能对比
+    智能选择: baseline + 每个模型家族的最优结果
     """
     if len(experiments) < 2:
         print("⚠️  实验记录少于 2 个，跳过 per-case 对比图")
         return
     
-    baseline = experiments[0]
-    latest = experiments[-1]
+    # 按模型家族分组
+    model_families = {}
+    for exp in experiments:
+        exp_id = exp['experiment_id']
+        # 提取模型名称（去掉后缀）
+        if 'gpt' in exp_id.lower():
+            family = 'GPT-5.2'
+        elif 'gemini' in exp_id.lower() or 'superassistant' in exp_id.lower():
+            family = 'Gemini-2.5-Pro'
+        elif 'baseline' == exp_id:
+            family = 'Baseline'
+        else:
+            family = 'Other'
+        
+        if family not in model_families:
+            model_families[family] = []
+        model_families[family].append(exp)
     
-    case_ids = list(baseline['per_case'].keys())
+    # 选择每个家族的最优结果（最短时间 + 100% pass rate）
+    selected_experiments = []
+    selected_labels = []
     
-    baseline_times = [baseline['per_case'][c]['wall_time'] for c in case_ids]
-    latest_times = [latest['per_case'][c]['wall_time'] for c in case_ids]
+    # 先添加 Baseline
+    if 'Baseline' in model_families:
+        selected_experiments.append(model_families['Baseline'][0])
+        selected_labels.append('Baseline')
     
-    speedup = [b / l if l > 0 else 0 for b, l in zip(baseline_times, latest_times)]
+    # 再添加其他模型的最优结果
+    for family in ['GPT-5.2', 'Gemini-2.5-Pro', 'Other']:
+        if family in model_families:
+            # 优先选择 100% pass rate 的，然后选择最短时间的
+            family_exps = model_families[family]
+            best = min(family_exps, key=lambda e: (
+                -e['summary']['pass_rate'],  # 优先高通过率
+                e['summary']['total_wall_time']  # 其次低时间
+            ))
+            selected_experiments.append(best)
+            selected_labels.append(f"{family} (best)")
     
-    fig, ax = plt.subplots(figsize=(12, 6))
+    if len(selected_experiments) < 2:
+        print("⚠️  没有足够的实验进行对比")
+        return
+    
+    # 获取所有 case
+    case_ids = list(selected_experiments[0]['per_case'].keys())
+    
+    # 准备绘图
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
     
     x = np.arange(len(case_ids))
-    width = 0.35
+    width = 0.8 / len(selected_experiments)
     
-    bars1 = ax.bar(x - width/2, baseline_times, width, label='Baseline', color='#1f77b4', alpha=0.8)
-    bars2 = ax.bar(x + width/2, latest_times, width, label='Latest', color='#ff7f0e', alpha=0.8)
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728', '#9467bd']
     
-    ax.set_xlabel('Test Case', fontweight='bold')
-    ax.set_ylabel('Wall Time (seconds)', fontweight='bold')
-    ax.set_title('Per-Case Performance: Baseline vs Latest', fontweight='bold', pad=15)
-    ax.set_xticks(x)
-    ax.set_xticklabels(case_ids, rotation=45, ha='right')
-    ax.legend(loc='best')
-    ax.grid(True, axis='y', alpha=0.3, linestyle='--')
+    # 子图 1: 耗时对比
+    for idx, (exp, label) in enumerate(zip(selected_experiments, selected_labels)):
+        times = [exp['per_case'][c]['wall_time'] for c in case_ids]
+        offset = (idx - len(selected_experiments)/2 + 0.5) * width
+        ax1.bar(x + offset, times, width, label=label, 
+               color=colors[idx % len(colors)], alpha=0.8)
     
-    # 在柱子上标注加速比
-    for i, (b, l, s) in enumerate(zip(baseline_times, latest_times, speedup)):
-        if s > 1:
-            ax.text(i, max(b, l) * 1.05, f'{s:.2f}x', ha='center', fontsize=8, 
-                   color='green', fontweight='bold')
+    ax1.set_ylabel('Wall Time (seconds)', fontweight='bold')
+    ax1.set_title('Per-Case Performance Comparison: Wall Time', fontweight='bold', pad=15)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(case_ids, rotation=45, ha='right')
+    ax1.legend(loc='best', framealpha=0.9)
+    ax1.grid(True, axis='y', alpha=0.3, linestyle='--')
+    
+    # 子图 2: 迭代次数对比
+    for idx, (exp, label) in enumerate(zip(selected_experiments, selected_labels)):
+        iters = [exp['per_case'][c]['iters'] for c in case_ids]
+        offset = (idx - len(selected_experiments)/2 + 0.5) * width
+        ax2.bar(x + offset, iters, width, label=label, 
+               color=colors[idx % len(colors)], alpha=0.8)
+    
+    ax2.set_xlabel('Test Case', fontweight='bold')
+    ax2.set_ylabel('Iterations', fontweight='bold')
+    ax2.set_title('Per-Case Performance Comparison: Iterations', fontweight='bold', pad=15)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(case_ids, rotation=45, ha='right')
+    ax2.legend(loc='best', framealpha=0.9)
+    ax2.grid(True, axis='y', alpha=0.3, linestyle='--')
     
     plt.tight_layout()
     
     output_path = output_dir / f'per_case_comparison.{fmt}'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"✅ Per-case 对比图已保存: {output_path}")
+    print(f"   对比模型: {', '.join(selected_labels)}")
     plt.close()
 
 

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Pytest
+.pytest_cache/
+
+# PDEBench generated files
+artifacts_bench/
+*.npz
+*.dat
+*.json
+!cases/**/*.json
+!pdebench/**/*.json
+!artifacts_bench/meta.json
+!benchmark_report.json
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+

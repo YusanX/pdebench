@@ -16,9 +16,12 @@ def solve_linear(A, b, ksp_params=None):
     """
     if ksp_params is None:
         ksp_params = {}
+
+    # Use CG with GAMG preconditioner. This is a powerful combination for the
+    # symmetric-dominant systems expected from these PDE problems.
+    ksp_type = 'cg'
+    pc_type = 'gamg'
     
-    ksp_type = ksp_params.get('type', 'cg')
-    pc_type = ksp_params.get('pc_type', 'jacobi')
     rtol = ksp_params.get('rtol', 1e-10)
     atol = ksp_params.get('atol', 1e-12)
     max_it = ksp_params.get('max_it', 10000)
@@ -31,7 +34,7 @@ def solve_linear(A, b, ksp_params=None):
     pc = ksp.getPC()
     pc.setType(pc_type)
     
-    ksp.setFromOptions()
+    # ksp.setFromOptions() # Commented out to ensure our settings are applied.
     
     x = b.duplicate()
     
@@ -98,4 +101,3 @@ def solve_linear_direct(A, b):
     }
     
     return x, info
-
