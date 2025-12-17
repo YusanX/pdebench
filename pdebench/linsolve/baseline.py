@@ -17,10 +17,11 @@ def solve_linear(A, b, ksp_params=None):
     if ksp_params is None:
         ksp_params = {}
 
-    # Use CG with GAMG preconditioner. This is a powerful combination for the
-    # symmetric-dominant systems expected from these PDE problems.
+    # Use CG with Jacobi preconditioner (Basic Baseline)
+    # This is a simple, robust, but slow strategy.
+    # Agents are expected to improve this by switching to GAMG/ILU/ICC.
     ksp_type = 'cg'
-    pc_type = 'gamg'
+    pc_type = 'jacobi'
     
     rtol = ksp_params.get('rtol', 1e-10)
     atol = ksp_params.get('atol', 1e-12)
