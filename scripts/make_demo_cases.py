@@ -21,7 +21,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 16, "cell_type": "triangle"},
+        "mesh": {"resolution": 200, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -52,7 +52,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 12, "cell_type": "triangle"},
+        "mesh": {"resolution": 100, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 2},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -83,7 +83,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 14, "cell_type": "quadrilateral"},
+        "mesh": {"resolution": 150, "cell_type": "quadrilateral"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -114,7 +114,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 18, "cell_type": "triangle"},
+        "mesh": {"resolution": 180, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -145,7 +145,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 20, "cell_type": "triangle"},
+        "mesh": {"resolution": 200, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -182,7 +182,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 12, "cell_type": "triangle"},
+        "mesh": {"resolution": 120, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -219,7 +219,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 14, "cell_type": "triangle"},
+        "mesh": {"resolution": 140, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -256,7 +256,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 10, "cell_type": "triangle"},
+        "mesh": {"resolution": 80, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 2},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -293,7 +293,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 12, "cell_type": "quadrilateral"},
+        "mesh": {"resolution": 120, "cell_type": "quadrilateral"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}
@@ -330,7 +330,7 @@ def make_demo_cases():
             }
         },
         "domain": {"type": "unit_square"},
-        "mesh": {"resolution": 16, "cell_type": "triangle"},
+        "mesh": {"resolution": 160, "cell_type": "triangle"},
         "fem": {"family": "Lagrange", "degree": 1},
         "bc": {
             "dirichlet": {"on": "all", "value": "u"}

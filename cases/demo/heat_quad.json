@@ -23,7 +23,7 @@
     "type": "unit_square"
   },
   "mesh": {
-    "resolution": 12,
+    "resolution": 120,
     "cell_type": "quadrilateral"
   },
   "fem": {

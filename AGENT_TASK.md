@@ -25,8 +25,9 @@ Optimize the `solve_linear` function in `pdebench/pdebench/linsolve/baseline.py`
 
 1. **Run Benchmark**:
    ```bash
-   python scripts/benchmark_score.py
+   python scripts/benchmark_score.py --log-history --experiment-id "<YOUR_MODEL_NAME>_run"
    ```
+   **CRITICAL**: You MUST use `--log-history` to record your score. Replace `<YOUR_MODEL_NAME>` with your model name (e.g., `gpt4_run`, `claude3_run`).
    
 2. **Check Results**:
    - The output will show a `🏆 Final Score Summary`.

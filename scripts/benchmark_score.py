@@ -9,6 +9,7 @@ PDEBench 性能评估脚本
 
 用法：
     python scripts/benchmark_score.py [--output report.json] [--keep-artifacts]
+    python scripts/benchmark_score.py --log-history --experiment-id "gpt4_run1"
 """
 import sys
 import json
@@ -17,9 +18,11 @@ import time
 import argparse
 from pathlib import Path
 import shutil
+import datetime
+import numpy as np
 
 
-def run_benchmark(keep_artifacts=False, output_file=None):
+def run_benchmark(keep_artifacts=False, output_file=None, log_history=False, experiment_id=None):
     """运行完整的 benchmark 套件"""
     repo_root = Path(__file__).parent.parent
     demo_dir = repo_root / "cases" / "demo"
@@ -178,6 +181,18 @@ def run_benchmark(keep_artifacts=False, output_file=None):
             json.dump(report, f, indent=2)
         print(f"\n📄 详细报告已保存到: {output_path}")
     
+    # 记录到历史日志（用于绘图和追踪）
+    if log_history:
+        log_experiment_step(
+            results=results,
+            total_wall_time=total_wall_time,
+            passed_cases=passed_cases,
+            total_cases=len(cases),
+            avg_iters=avg_iters,
+            experiment_id=experiment_id,
+            repo_root=repo_root
+        )
+    
     # 返回状态码
     if failed_cases:
         print("\n⚠️  有测试失败，返回状态码 1")
@@ -185,6 +200,59 @@ def run_benchmark(keep_artifacts=False, output_file=None):
     else:
         print("\n🎉 所有测试通过！")
         return 0
+
+
+def log_experiment_step(results, total_wall_time, passed_cases, total_cases, avg_iters, experiment_id, repo_root):
+    """将实验结果追加到历史日志文件"""
+    
+    # 计算平均相对误差（几何平均，对 log-scale 更合理）
+    rel_errors = []
+    for r in results:
+        if r["status"] == "PASS" and "rel_L2_fe" in r["metrics"]:
+            rel_errors.append(r["metrics"]["rel_L2_fe"])
+    
+    if rel_errors:
+        # 几何平均：exp(mean(log(errors)))
+        avg_rel_error = np.exp(np.mean(np.log(rel_errors)))
+    else:
+        avg_rel_error = float('inf')
+    
+    # 生成实验 ID
+    if experiment_id is None:
+        experiment_id = f"run_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    # 构建日志条目
+    log_entry = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "experiment_id": experiment_id,
+        "summary": {
+            "total_wall_time": total_wall_time,
+            "avg_rel_error": avg_rel_error,
+            "pass_rate": passed_cases / total_cases,
+            "passed_cases": passed_cases,
+            "total_cases": total_cases,
+            "avg_iters": avg_iters
+        },
+        "per_case": {
+            r["case_id"]: {
+                "status": r["status"],
+                "wall_time": r["wall_time"],
+                "iters": r["iters"],
+                "rel_L2_fe": r["metrics"].get("rel_L2_fe", None) if r["status"] == "PASS" else None,
+                "rel_res": r["metrics"].get("rel_res", None) if r["status"] == "PASS" else None
+            }
+            for r in results
+        }
+    }
+    
+    # 追加到 JSONL 文件
+    log_file = repo_root / "experiment_history.jsonl"
+    with open(log_file, "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+    
+    print(f"\n📈 实验记录已追加到: {log_file}")
+    print(f"   实验 ID: {experiment_id}")
+    print(f"   平均相对误差: {avg_rel_error:.4e}")
 
 
 def main():
@@ -202,13 +270,25 @@ def main():
         action="store_true",
         help="保留 artifacts_bench 目录（不清理旧数据）"
     )
+    parser.add_argument(
+        "--log-history",
+        action="store_true",
+        help="将结果追加到 experiment_history.jsonl 用于后续绘图分析"
+    )
+    parser.add_argument(
+        "--experiment-id",
+        help="实验标识符（用于区分不同的优化尝试），默认自动生成时间戳",
+        default=None
+    )
     
     args = parser.parse_args()
     
     try:
         exit_code = run_benchmark(
             keep_artifacts=args.keep_artifacts,
-            output_file=args.output
+            output_file=args.output,
+            log_history=args.log_history,
+            experiment_id=args.experiment_id
         )
         sys.exit(exit_code)
     except KeyboardInterrupt:

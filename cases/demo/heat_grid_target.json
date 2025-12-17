@@ -23,7 +23,7 @@
     "type": "unit_square"
   },
   "mesh": {
-    "resolution": 16,
+    "resolution": 160,
     "cell_type": "triangle"
   },
   "fem": {
