@@ -43,6 +43,8 @@ def solve_case(case_spec, outdir, ksp_params=None):
         solve_poisson(case_spec, outdir, ksp_params)
     elif pde_type == 'heat':
         solve_heat(case_spec, outdir, ksp_params)
+    elif pde_type == 'convection_diffusion':
+        solve_convection_diffusion(case_spec, outdir, ksp_params)
     else:
         raise ValueError(f"Unknown PDE type: {pde_type}")
     
@@ -76,12 +78,21 @@ def solve_poisson(case_spec, outdir, ksp_params=None):
     if 'rtol' not in ksp_params:
         ksp_params['rtol'] = 1e-10
     
+    # Build problem metadata for solver
+    num_dofs = A.getSize()[0]
+    problem_meta = {
+        'pde_type': 'poisson',
+        'num_dofs': num_dofs,
+        'is_symmetric': True,  # Poisson equation produces symmetric matrices
+        'is_time_dependent': False,
+    }
+    
     # Solve
     process = psutil.Process()
     mem_before = process.memory_info().rss / 1024 / 1024
     
     t_start = time.time()
-    u_vec, solver_info = solve_linear(A, b, ksp_params)
+    u_vec, solver_info = solve_linear(A, b, ksp_params, problem_meta=problem_meta)
     t_end = time.time()
     
     mem_after = process.memory_info().rss / 1024 / 1024
@@ -217,7 +228,18 @@ def solve_heat(case_spec, outdir, ksp_params=None):
         
         A, b, bcs, _ = setup_heat_problem(msh, V, case_spec, u_prev, dt, t_current)
         
-        u_vec, solver_info = solve_linear(A, b, ksp_params)
+        # Build problem metadata for solver
+        num_dofs = A.getSize()[0]
+        problem_meta = {
+            'pde_type': 'heat',
+            'num_dofs': num_dofs,
+            'is_symmetric': True,  # Heat equation produces symmetric matrices
+            'is_time_dependent': True,
+            'time_step': step + 1,
+            'total_steps': num_steps,
+        }
+        
+        u_vec, solver_info = solve_linear(A, b, ksp_params, problem_meta=problem_meta)
         
         u_prev.x.array[:] = u_vec.array_r
         
@@ -287,3 +309,122 @@ def solve_heat(case_spec, outdir, ksp_params=None):
     with open(outdir / 'meta.json', 'w') as f:
         json.dump(meta, f, indent=2)
 
+
+def solve_convection_diffusion(case_spec, outdir, ksp_params=None):
+    """Solve Convection-Diffusion using baseline Krylov."""
+    # Load system
+    viewer = PETSc.Viewer().createBinary(str(outdir / 'system_A.dat'), 'r')
+    A = PETSc.Mat().load(viewer)
+    viewer.destroy()
+    
+    viewer = PETSc.Viewer().createBinary(str(outdir / 'system_b.dat'), 'r')
+    b = PETSc.Vec().load(viewer)
+    viewer.destroy()
+    
+    # Load problem info to get metadata
+    with open(outdir / 'problem_info.json', 'r') as f:
+        problem_info = json.load(f)
+    
+    # Setup KSP parameters
+    if ksp_params is None:
+        ksp_params = {}
+    
+    # Default parameters (convection-diffusion is typically non-symmetric)
+    if 'type' not in ksp_params:
+        # Use GMRES for non-symmetric problems
+        ksp_params['type'] = 'gmres'
+    if 'pc_type' not in ksp_params:
+        ksp_params['pc_type'] = 'ilu'
+    if 'rtol' not in ksp_params:
+        ksp_params['rtol'] = 1e-10
+    
+    # Build problem metadata for solver
+    num_dofs = A.getSize()[0]
+    problem_meta = {
+        'pde_type': 'convection_diffusion',
+        'num_dofs': num_dofs,
+        'is_symmetric': problem_info.get('is_symmetric', False),
+        'is_time_dependent': False,
+        'epsilon': problem_info.get('epsilon', 0.01),
+        'beta': problem_info.get('beta', [1.0, 1.0]),
+        'peclet_number': problem_info.get('peclet_number', 1.0),
+    }
+    
+    # Solve
+    process = psutil.Process()
+    mem_before = process.memory_info().rss / 1024 / 1024
+    
+    t_start = time.time()
+    u_vec, solver_info = solve_linear(A, b, ksp_params, problem_meta=problem_meta)
+    t_end = time.time()
+    
+    mem_after = process.memory_info().rss / 1024 / 1024
+    
+    # Reconstruct FE function for sampling
+    mesh_spec = case_spec['mesh']
+    domain_spec = case_spec['domain']
+    fem_spec = case_spec['fem']
+    
+    from ..solvers.base import create_mesh, create_function_space, sample_on_grid
+    msh = create_mesh(
+        domain_spec['type'],
+        mesh_spec['resolution'],
+        mesh_spec.get('cell_type', 'triangle')
+    )
+    V = create_function_space(msh, fem_spec['family'], fem_spec['degree'])
+    
+    u = fem.Function(V)
+    u.x.array[:] = u_vec.array_r
+    
+    # Sample on grid
+    output_spec = case_spec['output']
+    grid_spec = output_spec['grid']
+    x_grid, y_grid, u_grid = sample_on_grid(
+        u, grid_spec['bbox'], grid_spec['nx'], grid_spec['ny']
+    )
+    
+    # Save solution
+    np.savez(
+        outdir / 'solution.npz',
+        x=x_grid,
+        y=y_grid,
+        u=u_grid,
+    )
+    
+    # Save u vector for evaluation
+    viewer = PETSc.Viewer().createBinary(str(outdir / 'solution_u.dat'), 'w')
+    u_vec.view(viewer)
+    viewer.destroy()
+    
+    # Extract exposed parameters
+    expose_params = case_spec.get('expose_parameters', [])
+    exposed = {}
+    for param in expose_params:
+        if param == 'mesh.resolution':
+            exposed[param] = mesh_spec['resolution']
+        elif param == 'fem.degree':
+            exposed[param] = fem_spec['degree']
+        elif param == 'ksp.type':
+            exposed[param] = solver_info['ksp_type']
+        elif param == 'ksp.rtol':
+            exposed[param] = solver_info['rtol']
+        elif param == 'pc.type':
+            exposed[param] = solver_info['pc_type']
+    
+    # Save metadata
+    meta = {
+        'wall_time_sec': solver_info['wall_time_sec'],
+        'peak_rss_mb': mem_after,
+        'solver_info': {
+            'ksp_type': solver_info['ksp_type'],
+            'pc_type': solver_info['pc_type'],
+            'rtol': solver_info['rtol'],
+            'iters': solver_info['iters'],
+            'converged': solver_info['converged'],
+            'residual_norm': solver_info['residual_norm'],
+        },
+        'exposed_parameters': exposed,
+    }
+    
+    with open(outdir / 'meta.json', 'w') as f:
+        json.dump(meta, f, indent=2)

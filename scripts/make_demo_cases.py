@@ -347,6 +347,142 @@ def make_demo_cases():
         }
     })
     
+    # ========================================================================
+    # Convection-Diffusion Cases (NEW - High Difficulty)
+    # ========================================================================
+    
+    # Case 11: Convection-Diffusion (Low Péclet - Easy)
+    cases.append({
+        "id": "convdiff_low",
+        "pde": {
+            "type": "convection_diffusion",
+            "description": "Convection-Diffusion with low Péclet number (slightly non-symmetric)",
+            "pde_params": {
+                "epsilon": 1.0,
+                "beta": [1.0, 1.0]
+            },
+            "manufactured_solution": {
+                "u": "sin(pi*x)*sin(pi*y)"
+            }
+        },
+        "domain": {"type": "unit_square"},
+        "mesh": {"resolution": 150, "cell_type": "triangle"},
+        "fem": {"family": "Lagrange", "degree": 1},
+        "bc": {
+            "dirichlet": {"on": "all", "value": "u"}
+        },
+        "targets": {
+            "target_error": 5e-3,
+            "metric": "rel_L2_fe"
+        },
+        "expose_parameters": ["mesh.resolution", "fem.degree", "ksp.type", "ksp.rtol", "pc.type"],
+        "output": {
+            "format": "npz",
+            "grid": {"bbox": [0, 1, 0, 1], "nx": 50, "ny": 50},
+            "save_xdmf": False
+        }
+    })
+    
+    # Case 12: Convection-Diffusion (Medium Péclet - Challenging)
+    cases.append({
+        "id": "convdiff_medium",
+        "pde": {
+            "type": "convection_diffusion",
+            "description": "Convection-Diffusion with medium Péclet number (boundary layer appears)",
+            "pde_params": {
+                "epsilon": 0.01,
+                "beta": [10.0, 10.0]
+            },
+            "manufactured_solution": {
+                "u": "sin(pi*x)*sin(pi*y)"
+            }
+        },
+        "domain": {"type": "unit_square"},
+        "mesh": {"resolution": 200, "cell_type": "triangle"},
+        "fem": {"family": "Lagrange", "degree": 1},
+        "bc": {
+            "dirichlet": {"on": "all", "value": "u"}
+        },
+        "targets": {
+            "target_error": 1e-2,
+            "metric": "rel_L2_fe"
+        },
+        "expose_parameters": ["mesh.resolution", "fem.degree", "ksp.type", "ksp.rtol", "pc.type"],
+        "output": {
+            "format": "npz",
+            "grid": {"bbox": [0, 1, 0, 1], "nx": 50, "ny": 50},
+            "save_xdmf": False
+        }
+    })
+    
+    # Case 13: Convection-Diffusion (High Péclet - Very Hard)
+    cases.append({
+        "id": "convdiff_hard",
+        "pde": {
+            "type": "convection_diffusion",
+            "description": "Convection-Diffusion with high Péclet number (convection-dominated, highly non-symmetric)",
+            "pde_params": {
+                "epsilon": 0.001,
+                "beta": [100.0, 100.0]
+            },
+            "manufactured_solution": {
+                "u": "sin(pi*x)*sin(pi*y)"
+            }
+        },
+        "domain": {"type": "unit_square"},
+        "mesh": {"resolution": 250, "cell_type": "triangle"},
+        "fem": {"family": "Lagrange", "degree": 1},
+        "bc": {
+            "dirichlet": {"on": "all", "value": "u"}
+        },
+        "targets": {
+            "target_error": 2e-2,
+            "metric": "rel_L2_fe"
+        },
+        "expose_parameters": ["mesh.resolution", "fem.degree", "ksp.type", "ksp.rtol", "pc.type"],
+        "output": {
+            "format": "npz",
+            "grid": {"bbox": [0, 1, 0, 1], "nx": 50, "ny": 50},
+            "save_xdmf": False
+        }
+    })
+    
+    # Case 14: Poisson High Contrast (Ill-conditioned)
+    cases.append({
+        "id": "poisson_high_contrast",
+        "pde": {
+            "type": "poisson",
+            "description": "Poisson with high-contrast coefficients (jump from 1 to 1e6)",
+            "coefficients": {
+                "kappa": {
+                    "type": "piecewise_x",
+                    "left": 1.0,
+                    "right": 1000000.0,
+                    "x_split": 0.5
+                }
+            },
+            "manufactured_solution": {
+                "u": "sin(pi*x)*sin(pi*y)"  # Note: this u doesn't strictly satisfy interface conditions, but good enough for benchmarking solver
+            }
+        },
+        "domain": {"type": "unit_square"},
+        "mesh": {"resolution": 100, "cell_type": "triangle"},
+        "fem": {"family": "Lagrange", "degree": 1},
+        "bc": {
+            "dirichlet": {"on": "all", "value": "u"}
+        },
+        "targets": {
+            "target_error": 5e-2,
+            "metric": "rel_L2_grid"
+        },
+        "expose_parameters": ["mesh.resolution", "fem.degree", "ksp.type", "ksp.rtol", "pc.type"],
+        "output": {
+            "format": "npz",
+            "grid": {"bbox": [0, 1, 0, 1], "nx": 50, "ny": 50},
+            "save_xdmf": False
+        }
+    })
+
     return cases
 
 

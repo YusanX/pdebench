@@ -246,7 +246,7 @@ def log_experiment_step(results, total_wall_time, passed_cases, total_cases, avg
     }
     
     # 追加到 JSONL 文件
-    log_file = repo_root / "experiment_history.jsonl"
+    log_file = repo_root / "experiment.jsonl"
     with open(log_file, "a") as f:
         f.write(json.dumps(log_entry) + "\n")
     

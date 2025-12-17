@@ -102,6 +102,29 @@ def create_kappa_field(msh, kappa_spec):
     if kappa_spec['type'] == 'constant':
         from dolfinx import default_scalar_type
         return fem.Constant(msh, default_scalar_type(kappa_spec['value']))
+    elif kappa_spec['type'] == 'piecewise_x':
+        # Create a piecewise constant function based on x coordinate
+        # kappa = left if x < x_split else right
+        
+        left_val = kappa_spec['left']
+        right_val = kappa_spec['right']
+        x_split = kappa_spec['x_split']
+        
+        # Use DG0 (piecewise constant) for coefficient field
+        # Use fem.functionspace (lowercase) as per project convention
+        V_dg = fem.functionspace(msh, ("DG", 0))
+        kappa_func = fem.Function(V_dg)
+        
+        # Define piecewise function: left if x < x_split, else right
+        def piecewise_expr(x):
+            values = np.full(x.shape[1], right_val, dtype=np.float64)
+            left_mask = x[0] < x_split
+            values[left_mask] = left_val
+            return values
+            
+        kappa_func.interpolate(piecewise_expr)
+        return kappa_func
+        
     elif kappa_spec['type'] == 'expr':
         # TODO: implement expression-based kappa
         raise NotImplementedError("Expression-based kappa not yet implemented")

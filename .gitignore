@@ -6,7 +6,7 @@ __pycache__/
 .eggs/
 build/
 dist/
-
+*.pyc
 # Pytest
 .pytest_cache/
 

@@ -53,6 +53,8 @@ def generate(case_spec, outdir):
         generate_poisson(case_spec, msh, V, outdir)
     elif pde_type == 'heat':
         generate_heat(case_spec, msh, V, outdir)
+    elif pde_type == 'convection_diffusion':
+        generate_convection_diffusion(case_spec, msh, V, outdir)
     else:
         raise ValueError(f"Unknown PDE type: {pde_type}")
     
@@ -234,4 +236,82 @@ def generate_heat(case_spec, msh, V, outdir):
             't_final': t_current,
             'has_exact': 'u' in manufactured,
         }, f, indent=2)
+
+
+def generate_convection_diffusion(case_spec, msh, V, outdir):
+    """Generate reference solution for Convection-Diffusion equation."""
+    from ..solvers.convection_diffusion import setup_convdiff_problem
+    
+    # Setup problem (this assembles A, b and returns exact solution)
+    A, b, bcs, u_exact_func = setup_convdiff_problem(msh, V, case_spec)
+    
+    # Save system matrices
+    viewer = PETSc.Viewer().createBinary(str(outdir / 'system_A.dat'), 'w')
+    A.view(viewer)
+    viewer.destroy()
+    
+    viewer = PETSc.Viewer().createBinary(str(outdir / 'system_b.dat'), 'w')
+    b.view(viewer)
+    viewer.destroy()
+    
+    # Generate reference solution using direct LU
+    u_star_vec, ref_info = solve_linear_direct(A, b)
+    
+    # Save reference solution
+    viewer = PETSc.Viewer().createBinary(str(outdir / 'reference_u_star.dat'), 'w')
+    u_star_vec.view(viewer)
+    viewer.destroy()
+    
+    # Sample reference solution on grid
+    u_star = fem.Function(V)
+    u_star.x.array[:] = u_star_vec.array_r
+    
+    output_spec = case_spec['output']
+    grid_spec = output_spec['grid']
+    x_grid, y_grid, u_star_grid = sample_on_grid(
+        u_star, grid_spec['bbox'], grid_spec['nx'], grid_spec['ny']
+    )
+    
+    np.savez(
+        outdir / 'reference.npz',
+        x=x_grid,
+        y=y_grid,
+        u_star=u_star_grid,
+    )
+    
+    # Sample exact solution on grid (already computed in u_exact_func)
+    u_exact = u_exact_func
+    
+    x_grid, y_grid, u_exact_grid = sample_on_grid(
+        u_exact, grid_spec['bbox'], grid_spec['nx'], grid_spec['ny']
+    )
+    
+    np.savez(
+        outdir / 'exact.npz',
+        x=x_grid,
+        y=y_grid,
+        u_exact=u_exact_grid,
+    )
+    
+    # Save problem info
+    pde_params = case_spec['pde'].get('pde_params', {})
+    epsilon = pde_params.get('epsilon', 0.01)
+    beta = pde_params.get('beta', [1.0, 1.0])
+    beta_norm = np.linalg.norm(beta)
+    
+    with open(outdir / 'problem_info.json', 'w') as f:
+        json.dump({
+            'pde_type': 'convection_diffusion',
+            'num_dofs': V.dofmap.index_map.size_global,
+            'epsilon': epsilon,
+            'beta': beta,
+            'peclet_number': float(beta_norm / epsilon) if epsilon > 0 else float('inf'),
+            'is_symmetric': bool(beta_norm < 1e-12),  # Symmetric only if beta ≈ 0
+            'has_exact': True,
+        }, f, indent=2)
+    
+    # Cleanup
+    A.destroy()
+    b.destroy()
+    u_star_vec.destroy()
 
