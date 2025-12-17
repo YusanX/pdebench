@@ -9,6 +9,10 @@ Solve the PDE problems described in the dataset by generating a **complete, exec
     *   **Strict Requirement:** Your script MUST accept command-line arguments `--resolution` (int) and `--degree` (int).
     *   **Strict Requirement:** Your script MUST save the solution to `solution.npz` containing arrays `x`, `y`, and `u` (interpolated on a regular grid defined by the problem bounds).
     *   **Library:** Use `dolfinx` (FEniCSx) and `petsc4py`.
+    *   **Version Hint:** The environment uses `dolfinx` v0.8.0+.
+    *   Use `dolfinx.geometry.bb_tree(domain, domain.topology.dim)` instead of `BoundingBoxTree(...)`.
+    *   Use `dolfinx.geometry.compute_collisions_points` for point collision detection.
+    *   Ensure `LinearProblem` initialization includes `petsc_options_prefix`.
 3.  **Submit & Evaluate:** The system will run your script in a sandbox and compare your result against a hidden Oracle solution.
 
 ## Benchmark Execution Command
