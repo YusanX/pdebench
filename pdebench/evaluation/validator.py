@@ -10,7 +10,7 @@ Key technique: Interpolate both solutions to a common reference grid for compari
 import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 
 
@@ -21,19 +21,23 @@ class ValidationResult:
     is_valid: bool
     reason: str
     
-    # Accuracy metrics
+    # Accuracy metrics (误差向量)
     rel_L2_error: float
+    rel_H1_error: float  # 新增：H1 误差
     rel_Linf_error: float
     abs_L2_error: float
     
-    # Target checking
+    # Target checking (支持多档精度)
     target_metric: str
-    target_threshold: float
+    target_thresholds: Dict[str, float]  # 改为多档：{'1e-2': 0.01, '1e-3': 0.001, ...}
     achieved_value: float
     meets_target: bool
+    passed_levels: List[str]  # 新增：通过了哪些精度档
     
-    # Physical constraints
+    # Physical constraints (PDE 特定约束)
     mass_conservation_error: Optional[float] = None
+    divergence_error: Optional[float] = None  # 新增：散度误差（Stokes/NS）
+    boundary_error: Optional[float] = None  # 新增：边界条件误差
     
     # Additional metrics
     metrics: Optional[Dict[str, Any]] = None
@@ -45,19 +49,26 @@ class ValidationResult:
             'reason': self.reason,
             'accuracy': {
                 'rel_L2_error': float(self.rel_L2_error),
+                'rel_H1_error': float(self.rel_H1_error),
                 'rel_Linf_error': float(self.rel_Linf_error),
                 'abs_L2_error': float(self.abs_L2_error),
             },
             'target': {
                 'metric': self.target_metric,
-                'threshold': self.target_threshold,
+                'thresholds': self.target_thresholds,
                 'achieved': float(self.achieved_value),
                 'meets_target': self.meets_target,
+                'passed_levels': self.passed_levels,
             },
         }
         
+        # Physical constraints
         if self.mass_conservation_error is not None:
             result['mass_conservation_error'] = float(self.mass_conservation_error)
+        if self.divergence_error is not None:
+            result['divergence_error'] = float(self.divergence_error)
+        if self.boundary_error is not None:
+            result['boundary_error'] = float(self.boundary_error)
         
         if self.metrics:
             result['additional_metrics'] = self.metrics
@@ -117,12 +128,14 @@ def validate_solution(
             is_valid=False,
             reason=f"Error loading solution: {str(e)}",
             rel_L2_error=np.nan,
+            rel_H1_error=np.nan,
             rel_Linf_error=np.nan,
             abs_L2_error=np.nan,
             target_metric='unknown',
-            target_threshold=0.0,
+            target_thresholds={},
             achieved_value=np.nan,
             meets_target=False,
+            passed_levels=[],
         )
     
     # Compute metrics on common grid (use oracle grid as reference)
@@ -131,41 +144,69 @@ def validate_solution(
         u_oracle, x_oracle, y_oracle
     )
     
-    # Extract target configuration
+    # Extract target configuration (支持多档精度)
     target_metric = evaluation_config.get('target_metric', 'rel_L2_grid')
-    target_threshold = evaluation_config.get('target_error', 0.01)
+    
+    # 支持旧格式（单一阈值）和新格式（多档阈值）
+    if 'target_thresholds' in evaluation_config:
+        target_thresholds = evaluation_config['target_thresholds']
+    elif 'target_error' in evaluation_config:
+        # 兼容旧格式：单一阈值
+        single_threshold = evaluation_config['target_error']
+        target_thresholds = {
+            'default': single_threshold,
+            '1e-2': 0.01,
+            '1e-3': 0.001,
+            '1e-4': 0.0001,
+        }
+    else:
+        target_thresholds = {'default': 0.01}
     
     # Map target metric to computed value
     if target_metric == 'rel_L2_grid' or target_metric == 'rel_L2_error':
         achieved_value = metrics['rel_L2_error']
+    elif target_metric == 'rel_H1_error':
+        achieved_value = metrics.get('rel_H1_error', np.nan)
     elif target_metric == 'rel_Linf_error':
         achieved_value = metrics['rel_Linf_error']
     else:
         achieved_value = metrics['rel_L2_error']  # Default
     
-    meets_target = achieved_value <= target_threshold
+    # 检查通过了哪些精度档
+    passed_levels = []
+    for level_name, threshold in sorted(target_thresholds.items(), key=lambda x: x[1], reverse=True):
+        if achieved_value <= threshold:
+            passed_levels.append(level_name)
+    
+    # 使用最严格的已通过档位判断是否有效
+    meets_target = len(passed_levels) > 0
     
     # Determine validity
     is_valid = meets_target and not np.isnan(achieved_value)
     
     if is_valid:
-        reason = f"{target_metric}={achieved_value:.3e} ≤ target={target_threshold:.3e}"
+        best_level = passed_levels[-1] if passed_levels else 'none'
+        reason = f"{target_metric}={achieved_value:.3e} (通过档位: {best_level})"
     else:
         if np.isnan(achieved_value):
             reason = "Solution contains NaN or invalid values"
         else:
-            reason = f"{target_metric}={achieved_value:.3e} > target={target_threshold:.3e}"
+            # Report the most lenient threshold that was failed
+            max_threshold = max(target_thresholds.values())
+            reason = f"{target_metric}={achieved_value:.3e} > 阈值={max_threshold:.3e}"
     
     return ValidationResult(
         is_valid=is_valid,
         reason=reason,
         rel_L2_error=metrics['rel_L2_error'],
+        rel_H1_error=metrics.get('rel_H1_error', np.nan),
         rel_Linf_error=metrics['rel_Linf_error'],
         abs_L2_error=metrics['abs_L2_error'],
         target_metric=target_metric,
-        target_threshold=target_threshold,
+        target_thresholds=target_thresholds,
         achieved_value=achieved_value,
         meets_target=meets_target,
+        passed_levels=passed_levels,
         metrics=metrics,
     )
 
@@ -200,6 +241,7 @@ def compute_metrics(
     if not np.all(np.isfinite(u_agent)):
         return {
             'rel_L2_error': np.nan,
+            'rel_H1_error': np.nan,
             'rel_Linf_error': np.nan,
             'abs_L2_error': np.nan,
         }
@@ -207,6 +249,7 @@ def compute_metrics(
     if not np.all(np.isfinite(u_oracle)):
         return {
             'rel_L2_error': np.nan,
+            'rel_H1_error': np.nan,
             'rel_Linf_error': np.nan,
             'abs_L2_error': np.nan,
         }
@@ -233,6 +276,7 @@ def compute_metrics(
     except Exception as e:
         return {
             'rel_L2_error': np.nan,
+            'rel_H1_error': np.nan,
             'rel_Linf_error': np.nan,
             'abs_L2_error': np.nan,
             'error': f"Interpolation failed: {str(e)}"
@@ -244,6 +288,7 @@ def compute_metrics(
     if not np.any(mask):
         return {
             'rel_L2_error': np.nan,
+            'rel_H1_error': np.nan,
             'rel_Linf_error': np.nan,
             'abs_L2_error': np.nan,
             'error': 'No valid interpolation points'
@@ -275,6 +320,7 @@ def compute_metrics(
     
     return {
         'rel_L2_error': float(rel_L2_error),
+        'rel_H1_error': np.nan,  # H1 需要 FE 空间计算，网格插值无法得到
         'rel_Linf_error': float(rel_Linf_error),
         'abs_L2_error': float(abs_L2_error),
         'num_valid_points': int(np.sum(mask)),

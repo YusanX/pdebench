@@ -26,9 +26,15 @@ class ExecutionResult:
     exit_code: int
     stdout: str
     stderr: str
-    wall_time_sec: float
-    timeout_occurred: bool
-    memory_exceeded: bool
+    
+    # 分离的时间统计
+    t_agent_run: float  # Agent 脚本执行时间
+    t_oracle_run: float = 0.0  # Oracle 生成时间（如果有）
+    t_validation: float = 0.0  # 验证计算时间（如果有）
+    wall_time_sec: float = 0.0  # 总时间（向后兼容）
+    
+    timeout_occurred: bool = False
+    memory_exceeded: bool = False
     
     # Output files (if successful)
     solution_file: Optional[Path] = None
@@ -152,7 +158,8 @@ def execute_agent_script(
         exit_code=exit_code,
         stdout=stdout,
         stderr=stderr,
-        wall_time_sec=wall_time,
+        t_agent_run=wall_time,
+        wall_time_sec=wall_time,  # 向后兼容
         timeout_occurred=timeout_occurred,
         memory_exceeded=memory_exceeded,
         solution_file=solution_file if success else None,
@@ -184,6 +191,7 @@ def execute_agent_script_with_oracle(
     Returns:
         (agent_result, agent_outdir, oracle_outdir)
     """
+    import time
     from ..oracle import generate
     
     # Create output directories
@@ -210,13 +218,16 @@ def execute_agent_script_with_oracle(
         memory_limit_mb=evaluation_config.get('memory_limit_mb', 4096),
     )
     
-    # Generate oracle ground truth
+    # Generate oracle ground truth (计时)
+    t_oracle_start = time.time()
     if agent_result.success:
         try:
             generate(oracle_config, oracle_outdir)
+            agent_result.t_oracle_run = time.time() - t_oracle_start
         except Exception as e:
             agent_result.success = False
             agent_result.error_message = f"Oracle generation failed: {str(e)}"
+            agent_result.t_oracle_run = time.time() - t_oracle_start
     
     return agent_result, agent_outdir, oracle_outdir
 
