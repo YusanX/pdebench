@@ -4,14 +4,14 @@ You are an expert computational physicist participating in the PDEBench challeng
 
 ## 🏆 Evaluation Metrics (Leaderboard)
 
-Your solution will be evaluated on three criteria (in order of importance):
+Your solution will be evaluated on a **Pareto Frontier** basis. We do NOT just look at a single run; we sweep your solver across different resolutions (N=16..128) and degrees (P=1..2).
 
-1. **Pass Rate (Pass@ε)**: Success rate at strict accuracy thresholds (1e-4, 1e-3, 1e-2).
-2. **Efficiency (Time)**: Total execution time for correct solutions.
-3. **Accuracy (Error)**: Average relative L2 error.
+**Priorities:**
+1.  **Convergence Capability (MUST HAVE)**: Your solver **MUST** be able to reach high precision (Relative Error < 1e-4) when provided with fine meshes. If your algorithm hits an "accuracy ceiling" (e.g., error stays at 1e-2 even with N=128), it will be marked as **FAILED**.
+2.  **Pareto Efficiency**: Among valid high-precision solvers, the one that runs faster is better.
 
 **Success Criteria:**
-- **Pass@1e-4**: Elite (Machine Precision)
+- **Pass@1e-4**: Elite (Machine Precision) - *Target Goal*
 - **Pass@1e-3**: Excellent (Engineering Precision)
 - **Pass@1e-2**: Good (Basic Pass)
 
@@ -36,8 +36,17 @@ Read the first case from `datasets/level_2_1_basic.jsonl`. Extract the `prompt` 
 ### 3. Implement Solver (`agent_solver.py`)
 Create a Python script that:
 - Uses `dolfinx` (FEniCSx) **v0.10.0** for FEM implementation.
-- Accepts standard CLI arguments: `--resolution N`, `--degree P`, `--outdir DIR`.
-- **Hard-codes** the physics parameters from the prompt.
+- **MANDATORY CLI INTERFACE**:
+  - Must use `argparse` to accept: `--resolution N` (int), `--degree P` (int), `--outdir DIR` (str).
+  - **CRITICAL**: Pass `args.resolution` DIRECTLY to mesh generation (e.g., `mesh.create_unit_square(..., args.resolution, args.resolution)`).
+  - **CRITICAL**: Pass `args.degree` DIRECTLY to function space (e.g., `FunctionSpace(mesh, ("CG", args.degree))`).
+  - **DO NOT** hard-code these values! Your solver will be externally swept to generate Pareto fronts.
+- **CRITICAL - Physics Parameters**:
+  - **You MUST extract ALL physics parameters from the problem description** (kappa, source term f, boundary conditions, initial conditions, T_final, dt, etc.).
+  - **DO NOT invent or guess parameters**. If the prompt says `kappa=0.5`, you write `kappa=0.5`. If it says `T_final=0.2`, you write `T_final=0.2`.
+- **Ensures Stability**: 
+  - For time-dependent problems, ensure your `dt` is linked to `args.resolution` (CFL condition) or use an unconditional stable scheme (e.g., Backward Euler).
+  - For convection-dominated problems, consider stabilization (e.g., SUPG) to avoid oscillations that ruin high-precision targets.
 - **Interpolates** the solution onto the specified grid (nx × ny).
 - Saves outputs: `solution.npz` (x, y, u) and `meta.json`.
 
@@ -48,7 +57,7 @@ Create a Python script that:
 You have a maximum of **5 attempts** for **EACH** case. The counter resets when you move to a new case.
 
 1. **Research & Implement**: 
-   - If previous attempt failed on API error: **Re-read `DOLFINX_GUIDE.md`** or search online (if available).
+   - If previous attempt failed on API error: **Re-read `DOLFINX_GUIDE.md`** or locate the error and fix it.
    - Write or update `agent_solver.py`.
 
 2. **Evaluate**: Run the evaluation command:
