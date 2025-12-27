@@ -79,20 +79,23 @@ class ValidationResult:
 def validate_solution(
     agent_outdir: Path,
     oracle_outdir: Path,
-    evaluation_config: Dict[str, Any]
+    evaluation_config: Dict[str, Any],
+    oracle_config: Optional[Dict[str, Any]] = None
 ) -> ValidationResult:
     """
     Validate agent solution against oracle ground truth.
     
     This function performs mesh-agnostic validation by:
     1. Loading both solutions on their respective grids
-    2. Computing error metrics on a common reference grid
-    3. Checking against target thresholds
+    2. Checking grid consistency (if oracle_config provided)
+    3. Computing error metrics on a common reference grid
+    4. Checking against target thresholds
     
     Args:
         agent_outdir: Directory containing agent solution files
         oracle_outdir: Directory containing oracle reference files
         evaluation_config: Evaluation configuration (target metric, threshold)
+        oracle_config: Optional oracle configuration for grid consistency check
     
     Returns:
         ValidationResult with detailed metrics
@@ -146,6 +149,29 @@ def validate_solution(
             meets_target=False,
             passed_levels=[],
         )
+    
+    # Check grid consistency if oracle_config is provided
+    if oracle_config is not None:
+        grid_check = check_grid_consistency(
+            x_agent, y_agent, u_agent,
+            x_oracle, y_oracle, u_oracle,
+            oracle_config
+        )
+        if not grid_check['is_valid']:
+            return ValidationResult(
+                is_valid=False,
+                reason=f"Grid consistency check failed: {grid_check['reason']}",
+                rel_L2_error=np.nan,
+                rel_H1_error=np.nan,
+                rel_Linf_error=np.nan,
+                abs_L2_error=np.nan,
+                target_metric='unknown',
+                target_thresholds={},
+                achieved_value=np.nan,
+                meets_target=False,
+                passed_levels=[],
+                metrics={'grid_check': grid_check}
+            )
     
     # Compute metrics on common grid (use oracle grid as reference)
     metrics = compute_metrics(
@@ -218,6 +244,94 @@ def validate_solution(
         passed_levels=passed_levels,
         metrics=metrics,
     )
+
+
+def check_grid_consistency(
+    x_agent: np.ndarray,
+    y_agent: np.ndarray,
+    u_agent: np.ndarray,
+    x_oracle: np.ndarray,
+    y_oracle: np.ndarray,
+    u_oracle: np.ndarray,
+    oracle_config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Check if agent and oracle outputs are on the expected grid.
+    
+    Args:
+        x_agent, y_agent, u_agent: Agent solution
+        x_oracle, y_oracle, u_oracle: Oracle solution
+        oracle_config: Oracle configuration containing expected output grid
+    
+    Returns:
+        Dictionary with 'is_valid' (bool) and 'reason' (str)
+    """
+    # Extract expected grid from oracle_config
+    try:
+        expected_grid = oracle_config.get('output', {}).get('grid', {})
+        expected_nx = expected_grid.get('nx')
+        expected_ny = expected_grid.get('ny')
+        expected_bbox = expected_grid.get('bbox', [0, 1, 0, 1])
+        
+        if expected_nx is None or expected_ny is None:
+            # No grid specification, skip check
+            return {'is_valid': True, 'reason': 'No grid specification in oracle_config'}
+    except Exception as e:
+        return {'is_valid': True, 'reason': f'Could not parse grid spec: {str(e)}'}
+    
+    # Check agent grid
+    agent_nx = len(x_agent)
+    agent_ny = len(y_agent)
+    
+    if agent_nx != expected_nx or agent_ny != expected_ny:
+        return {
+            'is_valid': False,
+            'reason': f'Agent grid mismatch: expected ({expected_nx}×{expected_ny}), got ({agent_nx}×{agent_ny})',
+            'expected': {'nx': expected_nx, 'ny': expected_ny},
+            'agent': {'nx': agent_nx, 'ny': agent_ny}
+        }
+    
+    # Check agent grid bounds (with tolerance for floating point)
+    x_min, x_max = expected_bbox[0], expected_bbox[1]
+    y_min, y_max = expected_bbox[2], expected_bbox[3]
+    tol = 1e-6
+    
+    if not (np.abs(x_agent[0] - x_min) < tol and np.abs(x_agent[-1] - x_max) < tol):
+        return {
+            'is_valid': False,
+            'reason': f'Agent x-bounds mismatch: expected [{x_min}, {x_max}], got [{x_agent[0]:.6f}, {x_agent[-1]:.6f}]',
+            'expected_bbox': expected_bbox,
+            'agent_bounds': [float(x_agent[0]), float(x_agent[-1]), float(y_agent[0]), float(y_agent[-1])]
+        }
+    
+    if not (np.abs(y_agent[0] - y_min) < tol and np.abs(y_agent[-1] - y_max) < tol):
+        return {
+            'is_valid': False,
+            'reason': f'Agent y-bounds mismatch: expected [{y_min}, {y_max}], got [{y_agent[0]:.6f}, {y_agent[-1]:.6f}]',
+            'expected_bbox': expected_bbox,
+            'agent_bounds': [float(x_agent[0]), float(x_agent[-1]), float(y_agent[0]), float(y_agent[-1])]
+        }
+    
+    # Check oracle grid (should also match, but we're more lenient here as it's our own output)
+    oracle_nx = len(x_oracle)
+    oracle_ny = len(y_oracle)
+    
+    if oracle_nx != expected_nx or oracle_ny != expected_ny:
+        # Warning: Oracle itself is wrong, but don't fail (this is an internal bug)
+        return {
+            'is_valid': True,
+            'reason': f'Warning: Oracle grid mismatch ({oracle_nx}×{oracle_ny} vs {expected_nx}×{expected_ny}), proceeding with interpolation',
+            'warning': True
+        }
+    
+    # All checks passed
+    return {
+        'is_valid': True,
+        'reason': 'Grid consistency verified',
+        'expected': {'nx': expected_nx, 'ny': expected_ny, 'bbox': expected_bbox},
+        'agent': {'nx': agent_nx, 'ny': agent_ny},
+        'oracle': {'nx': oracle_nx, 'ny': oracle_ny}
+    }
 
 
 def compute_metrics(

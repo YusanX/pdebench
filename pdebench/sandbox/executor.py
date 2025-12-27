@@ -60,42 +60,48 @@ class ExecutionResult:
 def execute_agent_script(
     script_path: Path,
     outdir: Path,
-    resolution: int = 32,
-    degree: int = 1,
     timeout_sec: int = 300,
-    memory_limit_mb: int = 4096,
-    extra_args: Optional[Dict[str, Any]] = None
+    **test_params
 ) -> ExecutionResult:
     """
     Execute agent-generated script in a sandbox environment.
     
+    All test parameters (resolution, degree, dt, etc.) are passed via **test_params
+    and converted to CLI arguments automatically.
+    
     Args:
         script_path: Path to the Python script to execute
         outdir: Output directory for solution files
-        resolution: Mesh resolution (injected as --resolution)
-        degree: Polynomial degree (injected as --degree)
         timeout_sec: Maximum execution time in seconds
-        memory_limit_mb: Maximum memory usage in MB
-        extra_args: Additional CLI arguments to pass
+        **test_params: Test parameters (resolution, degree, dt, etc.)
+            Common parameters:
+            - resolution: int - Mesh resolution
+            - degree: int - Polynomial degree
+            - dt: float - Time step (for time-dependent PDEs)
+            - velocity_degree: int - Velocity space degree (for Stokes)
+            - pressure_degree: int - Pressure space degree (for Stokes)
     
     Returns:
         ExecutionResult containing execution status and outputs
+    
+    Example:
+        >>> result = execute_agent_script(
+        ...     script_path=Path('solver.py'),
+        ...     outdir=Path('output'),
+        ...     timeout_sec=300,
+        ...     resolution=128,
+        ...     degree=2,
+        ...     dt=0.01
+        ... )
     """
     outdir.mkdir(parents=True, exist_ok=True)
     
-    # Prepare command
-    cmd = [
-        'python',
-        str(script_path),
-        '--resolution', str(resolution),
-        '--degree', str(degree),
-        '--outdir', str(outdir),
-    ]
+    # Prepare command with all test parameters
+    cmd = ['python', str(script_path), '--outdir', str(outdir)]
     
-    # Add extra arguments
-    if extra_args:
-        for key, value in extra_args.items():
-            cmd.extend([f'--{key}', str(value)])
+    # Add all test parameters as CLI arguments
+    for key, value in test_params.items():
+        cmd.extend([f'--{key}', str(value)])
     
     # Start timing
     t_start = time.time()
