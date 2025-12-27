@@ -72,7 +72,7 @@ python scripts/generate_leaderboard_v2.py \
 
 ### Agent 任务说明
 
-详见 [`AGENT_TASK_SIMPLIFIED.md`](AGENT_TASK_SIMPLIFIED.md)
+详见 [`AGENT_TASK.md`](AGENT_TASK.md)
 
 **核心要求：**
 1. 读取 `cases/{case_id}/description.md` 了解问题
@@ -143,8 +143,8 @@ pdebench/
 ├── cases/                  # 测试案例（11个）
 │   ├── poisson_simple/
 │   │   ├── config.json        # 案例配置
-│   │   ├── description.md     # 问题描述（给Agent看）
-│   │   └── oracle_cache/      # Oracle缓存
+│   │   └── description.md     # 问题描述（给Agent看）
+│   │ 
 │   ├── heat_simple/
 │   └── ...
 │
@@ -160,8 +160,6 @@ pdebench/
 │   └── gpt-4/
 │       └── ...
 │
-├── AGENT_TASK_SIMPLIFIED.md   # 🆕 Agent任务说明
-├── REFACTORING_SUMMARY.md     # 🆕 重构总结
 └── README.md                  # 本文件
 ```
 
