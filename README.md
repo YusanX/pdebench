@@ -49,7 +49,7 @@ results/my_agent/
 python scripts/run_evaluation.py \
     --agent-name my_agent \
     --agent-dir results/my_agent \
-    --cases-dir cases_v2 \
+    --cases-dir cases \
     --output results/my_agent/evaluation.json \
     --modes fix_accuracy fix_time \
     --timeout 300
@@ -75,7 +75,7 @@ python scripts/generate_leaderboard_v2.py \
 详见 [`AGENT_TASK_SIMPLIFIED.md`](AGENT_TASK_SIMPLIFIED.md)
 
 **核心要求：**
-1. 读取 `cases_v2/{case_id}/description.md` 了解问题
+1. 读取 `cases/{case_id}/description.md` 了解问题
 2. 生成符合规范的 `solver.py`
 3. 保存到 `results/{agent_name}/{case_id}/solver.py`
 
@@ -140,7 +140,7 @@ pdebench/
 │   └── evaluation/            # 网格无关验证器
 │       └── validator.py       # 插值 + 误差计算
 │
-├── cases_v2/                  # 测试案例（11个）
+├── cases/                  # 测试案例（11个）
 │   ├── poisson_simple/
 │   │   ├── config.json        # 案例配置
 │   │   ├── description.md     # 问题描述（给Agent看）
@@ -267,10 +267,10 @@ python scripts/build_cases.py \
 
 ```bash
 # 对每个case运行一次Oracle
-for case_dir in cases_v2/*/; do
+for case_dir in cases/*/; do
     case_id=$(basename "$case_dir")
-    python -m pdebench.cli run "cases_v2/$case_id/config.json" \
-        --outdir "cases_v2/$case_id/oracle_cache"
+    python -m pdebench.cli run "cases/$case_id/config.json" \
+        --outdir "cases/$case_id/oracle_cache"
 done
 ```
 
