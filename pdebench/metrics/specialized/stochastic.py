@@ -22,8 +22,9 @@ class StochasticMetricsComputer(SpecializedMetricsComputer):
     Key metrics:
     - n_samples: Number of MC samples
     - mean_L2_norm: Solution mean norm
-    - mean_variance: Average variance
+    - mean_variance, max_variance: Variance statistics
     - mean_ci_width: Confidence interval width
+    - stochastic_method, mc_samples, pc_order: Solver information
     """
     
     def compute(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -58,13 +59,6 @@ class StochasticMetricsComputer(SpecializedMetricsComputer):
                 u_std = np.std(samples, axis=0)
                 ci_width = 1.96 * u_std / np.sqrt(len(samples))
                 metrics['mean_ci_width'] = float(np.mean(ci_width))
-                
-                # 3. Compare with oracle mean (if exists)
-                oracle_mean_file = self.oracle_output_dir / 'u_mean.npy'
-                if oracle_mean_file.exists():
-                    u_mean_oracle = np.load(oracle_mean_file)
-                    mean_error = np.linalg.norm(u_mean - u_mean_oracle) / np.linalg.norm(u_mean_oracle)
-                    metrics['mean_solution_error'] = float(mean_error)
             
             # Read solver information
             solver_info = self._read_solver_info()

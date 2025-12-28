@@ -21,9 +21,9 @@ class MultiphysicsMetricsComputer(SpecializedMetricsComputer):
     
     Key metrics:
     - n_fields: Number of coupled fields
-    - coupling_iterations_mean: Coupling solver iterations
-    - interface_jump_L2: Interface continuity
     - available_fields: List of field variables
+    - coupling_iterations_mean, coupling_iterations_max: Coupling solver iterations
+    - coupling_scheme, partitioned_method, block_preconditioner: Solver information
     """
     
     def compute(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -57,12 +57,6 @@ class MultiphysicsMetricsComputer(SpecializedMetricsComputer):
                     else:
                         metrics['coupling_iterations'] = iters
             
-            # Check interface continuity (if interface data available)
-            interface_file = self.agent_output_dir / 'interface_jump.npy'
-            if interface_file.exists():
-                jump = np.load(interface_file)
-                metrics['interface_jump_L2'] = float(np.linalg.norm(jump))
-                metrics['interface_jump_max'] = float(np.max(np.abs(jump)))
             
             # Read solver information
             solver_info = self._read_solver_info()

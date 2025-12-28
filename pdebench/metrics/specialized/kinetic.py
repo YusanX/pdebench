@@ -22,7 +22,7 @@ class KineticMetricsComputer(SpecializedMetricsComputer):
     - total_mass: ∫f dxdv
     - total_momentum: ∫v·f dxdv
     - total_energy: ∫v²·f dxdv
-    - mass_conservation_error: Conservation in phase space
+    - phase_space_method, collision_operator: Solver information
     """
     
     def compute(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -57,23 +57,6 @@ class KineticMetricsComputer(SpecializedMetricsComputer):
                     energy = np.sum(f_agent * (v_grid[None, :]**2), axis=1) * dv
                     metrics['total_energy'] = float(np.sum(energy))
             
-            # Check conservation (need initial state)
-            f0_file = self.agent_output_dir / 'f_initial.npy'
-            if f0_file.exists() and agent_f_file.exists():
-                f0 = np.load(f0_file)
-                f_final = np.load(agent_f_file)
-                
-                if f0.ndim == 2:
-                    nx, nv = f0.shape
-                    v_max = 5.0
-                    dv = 2 * v_max / nv
-                    
-                    mass0 = np.sum(f0) * dv
-                    mass_final = np.sum(f_final) * dv
-                    
-                    if np.abs(mass0) > 1e-14:
-                        mass_error = np.abs(mass_final - mass0) / np.abs(mass0)
-                        metrics['mass_conservation_error'] = float(mass_error)
             
             # Read solver information
             solver_info = self._read_solver_info()

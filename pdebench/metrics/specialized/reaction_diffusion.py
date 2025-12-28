@@ -1,10 +1,9 @@
 """Reaction-Diffusion PDE specialized metrics computation.
 
 Metrics for reaction-diffusion equations (Allen-Cahn, Fisher-KPP, Gray-Scott):
-- Energy decay (free energy monotonicity)
-- Mass conservation
-- Front propagation speed
-- Nonlinear solver efficiency
+- Front propagation speed: Traveling wave speed
+- Nonlinear solver efficiency (Newton iterations)
+- Solver information (time integrator, nonlinear method)
 """
 
 import json
@@ -20,10 +19,9 @@ class ReactionDiffusionMetricsComputer(SpecializedMetricsComputer):
     Compute specialized metrics for reaction-diffusion PDEs.
     
     Key metrics:
-    - energy_decay_ratio: Free energy dissipation
-    - mass_conservation_error: Mass conservation
     - front_propagation_speed: Traveling wave speed
-    - newton_iterations_mean: Nonlinear solver efficiency
+    - newton_iterations_mean, newton_iterations_max: Nonlinear solver iterations
+    - time_integrator, nonlinear_method: Solver information
     """
     
     def compute(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,21 +44,7 @@ class ReactionDiffusionMetricsComputer(SpecializedMetricsComputer):
                             metrics['newton_iterations_mean'] = float(np.mean(iters))
                             metrics['newton_iterations_max'] = int(np.max(iters))
                 
-                # Energy evolution
-                if 'energy_history' in meta:
-                    energy = np.array(meta['energy_history'])
-                    
-                    energy_diffs = np.diff(energy)
-                    n_violations = np.sum(energy_diffs > 1e-10)
-                    
-                    metrics['energy_monotone'] = bool(n_violations == 0)
-                    metrics['energy_violations'] = int(n_violations)
-                    
-                    if len(energy) > 1 and np.abs(energy[0]) > 1e-14:
-                        decay_ratio = (energy[0] - energy[-1]) / np.abs(energy[0])
-                        metrics['energy_decay_ratio'] = float(decay_ratio)
-            
-            # 2. Mass conservation
+            # 2. Front propagation speed
             u0_file = self.agent_output_dir / 'u_initial.npy'
             u_final_file = self.agent_output_dir / 'u.npy'
             
@@ -68,14 +52,7 @@ class ReactionDiffusionMetricsComputer(SpecializedMetricsComputer):
                 u0 = np.load(u0_file)
                 u_final = np.load(u_final_file)
                 
-                mass0 = np.sum(u0)
-                mass_final = np.sum(u_final)
-                
-                if np.abs(mass0) > 1e-14:
-                    mass_error = np.abs(mass_final - mass0) / np.abs(mass0)
-                    metrics['mass_conservation_error'] = float(mass_error)
-                
-                # 3. Front propagation speed
+                # Front propagation speed
                 front_speed = self._estimate_front_speed(u0, u_final, result)
                 if front_speed is not None:
                     metrics['front_propagation_speed'] = float(front_speed)

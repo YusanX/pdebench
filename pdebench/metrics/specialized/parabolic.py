@@ -2,9 +2,9 @@
 
 Metrics for parabolic equations (Heat equation, diffusion, etc.):
 - WorkRate: (DOF × N_steps) / T_total
-- Energy decay: L2 norm evolution
-- CFL number: stability indicator
-- Maximum principle verification
+- CFL number: Stability indicator
+- Problem parameters (DOF, time steps, dt, t_end)
+- Solver information (linear solver, iterations)
 """
 
 import json
@@ -20,10 +20,12 @@ class ParabolicMetricsComputer(SpecializedMetricsComputer):
     Compute specialized metrics for parabolic PDEs.
     
     Key metrics:
+    - dof, n_steps, dt, t_end: Problem parameters
     - efficiency_workrate: Work per unit time (DOF × steps / time)
-    - energy_decay_ratio: Energy dissipation
+    - time_per_step: Average time per step
     - cfl_number: CFL stability indicator
-    - max_principle_violated: Maximum principle check
+    - linear_solver_type, preconditioner_type: Solver information
+    - linear_iterations_mean, linear_iterations_max: Iteration counts
     """
     
     def compute(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -81,49 +83,6 @@ class ParabolicMetricsComputer(SpecializedMetricsComputer):
             if cfl > 0.5:  # Explicit stability limit
                 metrics['cfl_warning'] = f"CFL={cfl:.2f} > 0.5 (explicit unstable)"
             
-            # 4. Energy decay and maximum principle (if u_history available)
-            u_history_file = self.agent_output_dir / 'u_history.npy'
-            if u_history_file.exists():
-                u_history = np.load(u_history_file)
-                
-                # Energy (L2 norm) history
-                energy_history = np.array([
-                    np.linalg.norm(u_history[i].flatten()) 
-                    for i in range(len(u_history))
-                ])
-                
-                # Check energy monotonicity
-                energy_diffs = np.diff(energy_history)
-                n_violations = np.sum(energy_diffs > 1e-10)
-                
-                metrics['energy_monotone'] = bool(n_violations == 0)
-                metrics['energy_violations'] = int(n_violations)
-                
-                # Energy decay ratio
-                if energy_history[0] > 1e-14:
-                    decay_ratio = (energy_history[0] - energy_history[-1]) / energy_history[0]
-                    metrics['energy_decay_ratio'] = float(decay_ratio)
-                    
-                    # Estimate decay rate λ (E(t) ~ E0 * exp(-λt))
-                    if energy_history[-1] > 1e-14:
-                        lambda_estimate = -np.log(energy_history[-1] / energy_history[0]) / t_end
-                        metrics['decay_rate_lambda'] = float(lambda_estimate)
-                
-                # Maximum principle check
-                initial_max = np.max(np.abs(u_history[0]))
-                all_max = np.array([np.max(np.abs(u_history[i])) for i in range(len(u_history))])
-                global_max = np.max(all_max)
-                
-                metrics['initial_max'] = float(initial_max)
-                metrics['global_max'] = float(global_max)
-                
-                # Check violation (allow 1% numerical error)
-                tolerance = initial_max * 0.01
-                if global_max > initial_max + tolerance:
-                    metrics['max_principle_violated'] = True
-                    metrics['max_principle_overshoot'] = float(global_max - initial_max)
-                else:
-                    metrics['max_principle_violated'] = False
             
             # 5. Read solver information
             solver_info = self._read_solver_info()

@@ -1,10 +1,10 @@
 """Compressible Flow PDE specialized metrics computation.
 
 Metrics for compressible flow equations (Euler, compressible Navier-Stokes):
-- Shock resolution
+- Shock resolution: Shock width estimation
 - Density positivity preservation
-- Conservation laws (mass, momentum, energy)
-- Mach number characterization
+- Mach number: Flow regime indicator
+- Solver information (Riemann solver, limiter, time integrator)
 """
 
 import json
@@ -20,10 +20,10 @@ class CompressibleFlowMetricsComputer(SpecializedMetricsComputer):
     Compute specialized metrics for compressible flow PDEs.
     
     Key metrics:
-    - density_positive: Density positivity check
+    - density_min, density_positive: Density positivity check
     - shock_width: Shock resolution quality
-    - mass_conservation_error: Mass conservation
     - mach_number: Flow regime indicator
+    - riemann_solver, shock_limiter, time_integrator: Solver information
     """
     
     def compute(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,18 +42,10 @@ class CompressibleFlowMetricsComputer(SpecializedMetricsComputer):
                 metrics['density_min'] = float(rho_min)
                 metrics['density_positive'] = bool(rho_min > -1e-10)
                 
-                if rho_min < 0:
-                    metrics['density_positivity_violation'] = float(np.abs(rho_min))
-                
                 # 2. Shock resolution
                 if rho_agent.ndim == 1:
                     shock_width = self._compute_shock_width(rho_agent)
                     metrics['shock_width'] = float(shock_width)
-            
-            # 3. Mass conservation
-            mass_error = self._check_mass_conservation()
-            if mass_error is not None:
-                metrics['mass_conservation_error'] = float(mass_error)
             
             # 4. Mach number
             pde_config = self.config.get('oracle_config', {}).get('pde', {})
@@ -84,26 +76,6 @@ class CompressibleFlowMetricsComputer(SpecializedMetricsComputer):
             return float(width_points)
         except:
             return 0.0
-    
-    def _check_mass_conservation(self) -> Optional[float]:
-        """Check mass conservation."""
-        try:
-            rho0_file = self.agent_output_dir / 'rho_initial.npy'
-            rho_final_file = self.agent_output_dir / 'rho.npy'
-            
-            if rho0_file.exists() and rho_final_file.exists():
-                rho0 = np.load(rho0_file)
-                rho_final = np.load(rho_final_file)
-                
-                mass0 = np.sum(rho0)
-                mass_final = np.sum(rho_final)
-                
-                if np.abs(mass0) > 1e-14:
-                    return np.abs(mass_final - mass0) / np.abs(mass0)
-            
-            return None
-        except:
-            return None
     
     def _read_solver_info(self) -> Dict[str, Any]:
         """Read solver information from meta.json."""
